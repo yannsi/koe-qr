@@ -1,0 +1,730 @@
+<title>声のQR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap">
+<style>
+:root{
+  --paper:#F3F4F1; --card:#FFFFFF; --ink:#1A2433; --muted:#5A6573; --line:#D6DAD8;
+  --ai:#274A78; --ai-soft:#E1E8F2; --on-ai:#FFFFFF; --ukon:#E3B23C; --rec:#C94040; --ok:#2D7A55; --ok-soft:#E0F0E7; --warn:#9A5B00; --warn-soft:#F8EACF;
+  --font:"BIZ UDPGothic","Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --paper:#10151C; --card:#19212B; --ink:#E6EAF0; --muted:#9DA8B5; --line:#2C3743;
+    --ai:#8EB0DE; --ai-soft:#1F2E42; --on-ai:#0E1520; --ukon:#E8BF5A; --rec:#EE7B7B; --ok:#6CC697; --ok-soft:#183126; --warn:#EAB35E; --warn-soft:#382A14;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --paper:#10151C; --card:#19212B; --ink:#E6EAF0; --muted:#9DA8B5; --line:#2C3743;
+  --ai:#8EB0DE; --ai-soft:#1F2E42; --on-ai:#0E1520; --ukon:#E8BF5A; --rec:#EE7B7B; --ok:#6CC697; --ok-soft:#183126; --warn:#EAB35E; --warn-soft:#382A14;
+}
+*{box-sizing:border-box;}
+[hidden]{display:none!important;}
+body{background:var(--paper);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.7;padding:0 16px;margin:0;}
+.wrap{max-width:620px;margin:0 auto;padding-block:22px 48px;display:flex;flex-direction:column;gap:16px;}
+h1{margin:0;font-size:30px;line-height:1.3;letter-spacing:.02em;}
+h1 small{font-size:13px;color:var(--muted);font-weight:400;margin-left:8px;letter-spacing:.04em;}
+.lead{margin:0;color:var(--muted);font-size:15px;}
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:6px;}
+.tab{font:inherit;font-weight:700;border:0;border-radius:10px;padding:12px 8px;background:transparent;color:var(--muted);cursor:pointer;min-height:48px;}
+.tab[aria-selected="true"]{background:var(--ai);color:var(--on-ai);}
+.panel{display:flex;flex-direction:column;gap:14px;}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px;}
+.label{font-size:13px;color:var(--muted);letter-spacing:.04em;margin:0;}
+.label b{color:var(--ink);font-size:15px;letter-spacing:0;margin-right:6px;}
+.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;}
+.choice{position:relative;}
+.choice input{position:absolute;opacity:0;}
+.choice label{display:flex;flex-direction:column;gap:2px;border:2px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer;min-height:56px;justify-content:center;}
+.choice label b{font-size:16px;}
+.choice label span{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums;}
+.choice input:checked + label{border-color:var(--ai);background:var(--ai-soft);}
+.choice input:focus-visible + label{outline:3px solid var(--ai);outline-offset:2px;}
+.recrow{display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
+.recbtn{width:84px;height:84px;border-radius:50%;border:0;background:var(--rec);color:#fff;font:inherit;font-weight:700;font-size:15px;cursor:pointer;display:grid;place-items:center;flex:none;box-shadow:0 4px 14px rgba(201,64,64,.3);}
+.recbtn.on{animation:pulse 1.2s ease-in-out infinite;}
+@keyframes pulse{50%{box-shadow:0 0 0 12px rgba(201,64,64,.12);}}
+.meter{flex:1 1 200px;display:flex;flex-direction:column;gap:6px;min-width:0;}
+.bar{height:10px;border-radius:5px;background:var(--line);overflow:hidden;}
+.bar i{display:block;height:100%;width:0;background:var(--ukon);}
+.secs{font-variant-numeric:tabular-nums;font-size:22px;font-weight:700;}
+.secs small{font-size:14px;color:var(--muted);font-weight:400;}
+.btn{font:inherit;font-weight:700;border-radius:12px;padding:12px 18px;min-height:50px;cursor:pointer;border:2px solid var(--ai);background:var(--card);color:var(--ai);display:inline-flex;align-items:center;justify-content:center;gap:8px;text-align:center;}
+.btn.primary{background:var(--ai);color:var(--on-ai);}
+.btn.small{min-height:40px;padding:6px 12px;font-size:14px;border-width:1px;}
+.btn:disabled{opacity:.45;cursor:not-allowed;}
+button:focus-visible,.btn:focus-visible,textarea:focus-visible,input[type=range]:focus-visible{outline:3px solid var(--ai);outline-offset:2px;}
+.recbtn:focus-visible{outline:3px solid var(--ukon);outline-offset:3px;}
+.row{display:flex;flex-wrap:wrap;gap:10px;}
+.row > *{flex:1 1 180px;}
+.samples{display:flex;flex-wrap:wrap;gap:8px;}
+.file{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;}
+textarea{font:inherit;font-size:18px;line-height:1.8;width:100%;min-height:130px;resize:vertical;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--paper);color:var(--ink);}
+.tempo{display:flex;align-items:center;gap:12px;}
+.tempo input{flex:1;accent-color:var(--ai);min-width:0;}
+.tempo output{font-variant-numeric:tabular-nums;font-weight:700;min-width:5.5em;text-align:right;}
+details{font-size:14px;color:var(--muted);}
+details summary{cursor:pointer;color:var(--ai);font-weight:700;}
+details ul{margin:8px 0 0;padding-left:1.2em;display:flex;flex-direction:column;gap:4px;}
+kbd{font-family:inherit;background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:0 4px;color:var(--ink);}
+.msg{margin:0;font-size:14px;border-radius:10px;padding:10px 12px;}
+.msg.info{background:var(--ai-soft);color:var(--ink);}
+.msg.ok{background:var(--ok-soft);color:var(--ink);}
+.msg.warn{background:var(--warn-soft);color:var(--ink);}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+.stat{background:var(--paper);border-radius:10px;padding:8px 10px;min-width:0;}
+.stat b{display:block;font-size:20px;font-variant-numeric:tabular-nums;}
+.stat span{font-size:12px;color:var(--muted);}
+.qrbox{background:#FFFFFF;border-radius:12px;padding:12px;display:flex;flex-direction:column;align-items:center;gap:6px;}
+.qrbox img{width:100%;max-width:420px;image-rendering:pixelated;display:block;}
+.qrcap{font-size:13px;color:#1A2433;text-align:center;}
+.hint{font-size:13px;color:var(--muted);margin:0;}
+.cam{position:relative;border-radius:12px;overflow:hidden;background:#000;aspect-ratio:4/3;max-width:100%;}
+.cam video{width:100%;height:100%;object-fit:cover;display:block;}
+.cam .guide{position:absolute;inset:12%;border:3px dashed rgba(255,255,255,.85);border-radius:10px;pointer-events:none;}
+.cam .scanmsg{position:absolute;left:0;right:0;bottom:10px;text-align:center;color:#fff;font-size:14px;text-shadow:0 1px 3px #000;}
+.bigplay{font:inherit;font-weight:700;font-size:20px;border:0;border-radius:16px;background:var(--ok);color:var(--paper);min-height:72px;cursor:pointer;}
+footer{font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:4px;}
+footer a{color:var(--ai);}
+#printArea{display:none;}
+@media (max-width:460px){.stats{grid-template-columns:1fr 1fr;}h1{font-size:26px;}}
+@media (prefers-reduced-motion: reduce){.recbtn.on{animation:none;}}
+@media print{
+  body{background:#fff;padding:0;}
+  .wrap{display:none;}
+  #printArea{display:flex!important;flex-direction:column;align-items:flex-start;gap:4mm;padding:10mm;}
+  #printArea img{width:80mm;height:80mm;image-rendering:pixelated;}
+  #printArea p{margin:0;font-size:10pt;color:#000;}
+}
+</style>
+
+<div class="wrap">
+  <header style="display:flex;flex-direction:column;gap:6px">
+    <h1>声のQR<small>試作版 0.3.1</small></h1>
+    <p class="lead">録音した声とメロディを、QRコードの中にそのまま入れます。読み取るときにネットはいりません。</p>
+  </header>
+
+  <div class="card" id="installCard" hidden>
+    <p class="label"><b>オフラインアプリとして使う</b></p>
+    <p class="hint" id="installText" style="font-size:14px;color:var(--ink)"></p>
+    <button class="btn primary" id="installBtn" type="button" hidden>ホーム画面に追加する</button>
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" id="tabMake" aria-selected="true" aria-controls="panelMake" type="button">QRを作る</button>
+    <button class="tab" role="tab" id="tabRead" aria-selected="false" aria-controls="panelRead" type="button">QRを読んで聞く</button>
+  </div>
+
+  <p class="msg warn" id="codecMsg" hidden></p>
+
+  <section class="panel" id="panelMake" role="tabpanel" aria-labelledby="tabMake">
+    <!-- 声 -->
+    <div class="card">
+      <p class="label"><b>声</b>入れなくてもかまいません</p>
+      <div class="choices">
+        <div class="choice"><input type="radio" name="mode" id="modeHq" value="5" checked><label for="modeHq"><b>音質優先</b><span id="capHq">最大 15秒</span></label></div>
+        <div class="choice"><input type="radio" name="mode" id="modeLong" value="8"><label for="modeLong"><b>長さ優先</b><span id="capLong">最大 26秒</span></label></div>
+      </div>
+      <div class="recrow">
+        <button class="recbtn" id="recBtn" type="button" aria-label="録音を始める">録音</button>
+        <div class="meter">
+          <span class="secs" id="recSecs">0.0<small> 秒 / 最大 15秒</small></span>
+          <div class="bar"><i id="recBar"></i></div>
+        </div>
+      </div>
+      <div class="row">
+        <label class="btn" for="audioFile">音声ファイルを選ぶ</label>
+        <button class="btn" id="clearVoice" type="button" hidden>声を外す</button>
+      </div>
+      <input class="file" type="file" id="audioFile" accept="audio/*">
+      <p class="hint">最初と最後の無音は自動で切り取ります。録音できないときは、スマホのボイスメモで録ったファイルを選んでください。</p>
+      <p class="msg" id="makeMsg" hidden></p>
+    </div>
+
+    <!-- メロディ -->
+    <div class="card">
+      <p class="label"><b>メロディ</b>ドレミか工工四で書きます</p>
+      <div class="samples">
+        <button class="btn small" type="button" data-sample="kkk">きらきら星（工工四）</button>
+        <button class="btn small" type="button" data-sample="doremi">きらきら星（ドレミ）</button>
+        <button class="btn small" type="button" data-sample="ryukyu">琉球音階のフレーズ</button>
+        <button class="btn small" type="button" id="melClear">消す</button>
+      </div>
+      <textarea id="melText" spellcheck="false" aria-label="メロディの楽譜"></textarea>
+      <details>
+        <summary>書き方</summary>
+        <ul>
+          <li>ドレミ：<kbd>ド</kbd><kbd>レ</kbd><kbd>ミ</kbd><kbd>ファ</kbd><kbd>ソ</kbd><kbd>ラ</kbd><kbd>シ</kbd>。前に<kbd>↑</kbd>で1オクターブ上、<kbd>↓</kbd>で下。後ろに<kbd>#</kbd>で半音上、<kbd>♭</kbd>で半音下。</li>
+          <li>工工四（本調子）：<kbd>合</kbd><kbd>乙</kbd><kbd>老</kbd><kbd>四</kbd><kbd>上</kbd><kbd>中</kbd><kbd>尺</kbd><kbd>工</kbd><kbd>五</kbd><kbd>六</kbd><kbd>七</kbd><kbd>八</kbd><kbd>九</kbd>、<kbd>下老</kbd><kbd>尺#</kbd><kbd>下尺</kbd>。合＝ド、工＝上のド、尺＝シ♭、尺#＝シとして鳴らします。</li>
+          <li>1文字が1拍。<kbd>ー</kbd>で1拍のばす、後ろに<kbd>_</kbd>で半分の長さ。<kbd>・</kbd>か<kbd>〇</kbd>で1拍休み。</li>
+          <li>空白・改行・<kbd>|</kbd>は区切りとして読み飛ばします。</li>
+        </ul>
+      </details>
+      <p class="label" style="margin-top:4px">音色</p>
+      <div class="choices">
+        <div class="choice"><input type="radio" name="inst" id="inst2" value="2" checked><label for="inst2"><b>三線</b></label></div>
+        <div class="choice"><input type="radio" name="inst" id="inst0" value="0"><label for="inst0"><b>オルゴール</b></label></div>
+        <div class="choice"><input type="radio" name="inst" id="inst1" value="1"><label for="inst1"><b>ピアノ</b></label></div>
+      </div>
+      <div class="tempo"><span class="label">速さ</span><input type="range" id="tempo" min="50" max="200" step="2" value="100" aria-label="速さ"><output id="tempoOut" for="tempo">♩＝100</output></div>
+      <button class="btn" id="melPlay" type="button">メロディだけ聞く</button>
+      <p class="hint">音が出ないときは、マナーモード（消音）を解除して、音量を上げてください。</p>
+      <p class="msg" id="melMsg" hidden></p>
+    </div>
+
+    <!-- 出来上がり -->
+    <div class="card" id="outCard" hidden>
+      <p class="label"><b>できあがったQR</b></p>
+      <div class="stats">
+        <div class="stat"><b id="stSec">0</b><span>秒の声</span></div>
+        <div class="stat"><b id="stNotes">0</b><span>音のメロディ</span></div>
+        <div class="stat"><b id="stBytes">0</b><span>バイト</span></div>
+        <div class="stat"><b id="stVer">0</b><span>QRの型番</span></div>
+      </div>
+      <button class="btn primary" id="previewBtn" type="button">QRの中身を聞いてみる</button>
+      <div class="qrbox"><img id="qrImg" alt="声とメロディが入ったQRコード"><span class="qrcap" id="qrCap"></span></div>
+      <p class="hint">画像を長押しすると保存できます。型番が大きいほど升目が細かいので、印刷するときは<b>7〜8cm角以上</b>にしてください。スマホの標準カメラでは読めないので、このページの「QRを読んで聞く」で読み取ります。</p>
+      <div class="row">
+        <button class="btn" id="selfTestBtn" type="button">この場で読み取りテスト</button>
+        <button class="btn" id="printBtn" type="button" hidden>印刷する</button>
+      </div>
+      <p class="msg" id="testMsg" hidden></p>
+    </div>
+  </section>
+
+  <section class="panel" id="panelRead" role="tabpanel" aria-labelledby="tabRead" hidden>
+    <div class="card">
+      <p class="label"><b>QRコードを読み取る</b></p>
+      <div class="row">
+        <button class="btn primary" id="camBtn" type="button">カメラで読み取る</button>
+        <label class="btn" for="photoFile">写真から読み取る</label>
+      </div>
+      <input class="file" type="file" id="photoFile" accept="image/*">
+      <div class="cam" id="camBox" hidden>
+        <video id="video" playsinline muted></video>
+        <div class="guide"></div>
+        <div class="scanmsg">QRコードを枠の中に大きく写してください</div>
+      </div>
+      <button class="btn" id="camStop" type="button" hidden>カメラを止める</button>
+      <p class="hint">升目が細かいので、QRが画面いっぱいに写るくらい近づけて、ピントが合うまで待ってください。うまくいかないときは「写真から読み取る」が確実です。</p>
+      <p class="msg" id="readMsg" hidden></p>
+    </div>
+    <div class="card" id="resultCard" hidden>
+      <p class="label"><b>読み取った中身</b></p>
+      <p style="margin:0;font-size:18px" id="rdText"></p>
+      <button class="bigplay" id="playBtn" type="button">▶ 再生する</button>
+      <p class="hint">音が出ないときは、マナーモード（消音）を解除して、音量を上げてください。</p>
+    </div>
+  </section>
+
+  <footer>
+    <span>声の圧縮には Codec2（LGPL-2.1, <a href="https://github.com/drowe67/codec2" target="_blank" rel="noopener">ソース</a>）、QRの作成に qrcode-generator（MIT）、読み取りに jsQR（Apache-2.0）を使っています。</span>
+    <span>録音した声は、この端末の中だけで処理されます。どこにも送信しません。</span>
+    <span id="offlineStatus"></span>
+  </footer>
+</div>
+
+<div id="printArea"><img id="printImg" alt=""><p id="printCap"></p></div>
+
+<script>/*__QRGEN__*/</script>
+<script>/*__JSQR__*/</script>
+<script>
+(function(){
+"use strict";
+const STANDALONE = /*__STANDALONE__*/false;
+const SECURE = location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1";
+const WASM_B64 = "__WASM_B64__";
+const CAP = 2331;                       /* QR 型番40・誤り訂正M のバイト数 */
+const MODE_NAME = {5:"音質優先", 8:"長さ優先"};
+const INST_NAME = ["オルゴール","ピアノ","三線"];
+const $ = id => document.getElementById(id);
+
+/* =============== Codec2 =============== */
+let C2 = null;
+async function initCodec(){
+  const bin = atob(WASM_B64); const bytes = new Uint8Array(bin.length);
+  for (let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+  let mem = null;
+  const stub = name => (...a) => {
+    if (name === "fd_write" && mem) { const dv = new DataView(mem.buffer); let t = 0; for (let i=0;i<a[2];i++) t += dv.getUint32(a[1]+i*8+4, true); dv.setUint32(a[3], t, true); }
+    return 0;
+  };
+  const { instance } = await WebAssembly.instantiate(bytes, { wasi_snapshot_preview1: new Proxy({}, { get: (_, n) => stub(n) }) });
+  mem = instance.exports.memory;
+  if (instance.exports._initialize) instance.exports._initialize();
+  C2 = instance.exports;
+}
+function modeInfo(id){ C2.c2_create(id); return { spf:C2.c2_spf(), bpf:C2.c2_bpf(), nb:C2.c2_bits() }; }
+
+/* 声 → フレームのビット列（詰めて並べる） */
+function encodeVoice(pcm, id, maxBytes){
+  const { spf, bpf, nb } = modeInfo(id);
+  const maxFrames = Math.max(0, Math.floor(maxBytes*8/nb));
+  const frames = Math.min(Math.ceil(pcm.length/spf), maxFrames);
+  const data = new Uint8Array(3 + Math.ceil(frames*nb/8));
+  data[0] = id; data[1] = frames>>8; data[2] = frames&255;
+  const pS = C2.c2_malloc(spf*2), pB = C2.c2_malloc(bpf);
+  const frame = new Int16Array(spf); let pos = 24;
+  for (let f=0; f<frames; f++){
+    frame.fill(0); frame.set(pcm.subarray(f*spf, Math.min(pcm.length,(f+1)*spf)));
+    new Int16Array(C2.memory.buffer, pS, spf).set(frame);
+    C2.c2_enc(pB, pS);
+    const fb = new Uint8Array(C2.memory.buffer, pB, bpf);
+    for (let b=0; b<nb; b++){ if ((fb[b>>3] >> (7-(b&7))) & 1) data[pos>>3] |= 0x80 >> (pos&7); pos++; }
+  }
+  C2.c2_free(pS); C2.c2_free(pB);
+  return { data, seconds: frames*spf/8000 };
+}
+function decodeVoice(data){
+  const id = data[0], frames = (data[1]<<8) | data[2];
+  if (!(id in MODE_NAME)) throw new Error("mode");
+  const { spf, bpf, nb } = modeInfo(id);
+  if (data.length < 3 + Math.ceil(frames*nb/8)) throw new Error("short");
+  const pcm = new Int16Array(frames*spf);
+  const pB = C2.c2_malloc(bpf), pO = C2.c2_malloc(spf*2);
+  const fb = new Uint8Array(bpf); let pos = 24;
+  for (let f=0; f<frames; f++){
+    fb.fill(0);
+    for (let b=0; b<nb; b++){ if ((data[pos>>3] >> (7-(pos&7))) & 1) fb[b>>3] |= 0x80 >> (b&7); pos++; }
+    new Uint8Array(C2.memory.buffer, pB, bpf).set(fb);
+    C2.c2_dec(pO, pB);
+    pcm.set(new Int16Array(C2.memory.buffer, pO, spf), f*spf);
+  }
+  C2.c2_free(pB); C2.c2_free(pO);
+  return { pcm, id, seconds: frames*spf/8000 };
+}
+
+/* =============== メロディ =============== */
+/* 工工四（本調子・合＝ド4）とドレミの音高（MIDI番号） */
+const KKS = { "下老":65, "下尺":72, "尺#":71, "尺♯":71, "合":60, "乙":62, "老":64, "四":65, "上":67, "中":69, "尺":70, "工":72, "五":74, "六":76, "七":77, "八":79, "九":81 };
+const DRM = { "ファ":65, "ド":60, "レ":62, "ミ":64, "ソ":67, "ラ":69, "シ":71 };
+const NOTE_RE = /^(↑*|↓*)(ファ|ド|レ|ミ|ソ|ラ|シ)([#♯♭b]?)|^(下老|下尺|尺#|尺♯|合|乙|老|四|上|中|尺|工|五|六|七|八|九)|^([・〇○])/;
+function parseMelody(src){
+  const notes = [], bad = new Set(); let s = src.replace(/\r/g,"");
+  while (s.length){
+    const ch = s[0];
+    if (/[\s|｜、。,]/.test(ch)) { s = s.slice(1); continue; }
+    const m = s.match(NOTE_RE);
+    if (!m){ bad.add(ch); s = s.slice(1); continue; }
+    s = s.slice(m[0].length);
+    let pitch = 0;
+    if (m[2]){ pitch = DRM[m[2]] + 12*((m[1].match(/↑/g)||[]).length - (m[1].match(/↓/g)||[]).length);
+      if (m[3] === "#" || m[3] === "♯") pitch++; else if (m[3] === "♭" || m[3] === "b") pitch--; }
+    else if (m[4]) pitch = KKS[m[4]];
+    let halves = 0; while (s[0] === "_" || s[0] === "＿"){ halves++; s = s.slice(1); }
+    let dur = Math.max(1, 4 >> Math.min(halves, 2));
+    while (s[0] === "ー" || s[0] === "-" || s[0] === "－"){ dur += 4; s = s.slice(1); }
+    notes.push([Math.max(0, Math.min(127, pitch)), Math.min(255, dur)]);
+  }
+  return { notes, bad: [...bad] };
+}
+function encodeMelody(notes, tempo, inst){
+  const d = new Uint8Array(4 + notes.length*2);
+  d[0] = tempo; d[1] = inst; d[2] = notes.length>>8; d[3] = notes.length&255;
+  notes.forEach(([p,u],i) => { d[4+i*2] = p; d[5+i*2] = u; });
+  return d;
+}
+function decodeMelody(d){
+  const tempo = d[0], inst = d[1], n = (d[2]<<8) | d[3], notes = [];
+  for (let i=0;i<n;i++) notes.push([d[4+i*2], d[5+i*2]]);
+  return { tempo, inst, notes };
+}
+/* 楽譜 → 音の波形（端末の中で合成） */
+function renderMelody(mel, sr){
+  const beat = 60/mel.tempo; let total = 0; mel.notes.forEach(([,u]) => total += u/4*beat);
+  const out = new Float32Array(Math.ceil((total + 1.6)*sr));
+  let t = 0;
+  for (const [p,u] of mel.notes){
+    const len = u/4*beat;
+    if (p > 0){
+      const f = 440*Math.pow(2,(p-69)/12), start = Math.floor(t*sr);
+      if (mel.inst === 2) sanshin(out, start, f, len, sr);
+      else if (mel.inst === 1) piano(out, start, f, len, sr);
+      else musicbox(out, start, f, len, sr);
+    }
+    t += len;
+  }
+  let pk = 0; for (let i=0;i<out.length;i++) pk = Math.max(pk, Math.abs(out[i]));
+  if (pk > 0) { const g = 0.8/pk; for (let i=0;i<out.length;i++) out[i] *= g; }
+  return out;
+}
+function musicbox(out, s0, f, len, sr){
+  const n = Math.min(out.length-s0, Math.floor(Math.max(len, 1.2)*sr));
+  for (let i=0;i<n;i++){ const t = i/sr, a = Math.min(1, t*400);
+    out[s0+i] += a*(Math.sin(2*Math.PI*f*t)*Math.exp(-t/0.9) + 0.3*Math.sin(4*Math.PI*f*t)*Math.exp(-t/0.35) + 0.12*Math.sin(2*Math.PI*f*5.4*t)*Math.exp(-t/0.08)); }
+}
+function piano(out, s0, f, len, sr){
+  const hold = len + 0.25, n = Math.min(out.length-s0, Math.floor((hold + 0.5)*sr));
+  for (let i=0;i<n;i++){ const t = i/sr; let v = 0;
+    for (let k=1;k<=6;k++) v += Math.sin(2*Math.PI*f*k*t)/Math.pow(k,1.4)*Math.exp(-t*(0.9+0.5*k));
+    const rel = t > hold ? Math.exp(-(t-hold)*18) : 1;
+    out[s0+i] += v*Math.min(1, t*300)*rel*0.8; }
+}
+function sanshin(out, s0, f, len, sr){
+  /* カープラス・ストロング法で弦をはじいた音を作る */
+  const N = Math.max(2, Math.round(sr/f)), buf = new Float32Array(N);
+  let seed = (s0 % 9973) + 1; const rnd = () => (seed = (seed*16807) % 2147483647) / 2147483647 * 2 - 1;
+  for (let i=0;i<N;i++) buf[i] = 0.6*rnd() + 0.4*(1 - 2*i/N);
+  const hold = len + 0.15, n = Math.min(out.length-s0, Math.floor((hold + 0.35)*sr));
+  let idx = 0, prev = 0; const decay = 0.9965;
+  for (let i=0;i<n;i++){
+    const cur = buf[idx], nxt = buf[(idx+1)%N];
+    const v = decay*(0.55*cur + 0.45*nxt);
+    buf[idx] = v; idx = (idx+1) % N;
+    const t = i/sr, rel = t > hold ? Math.exp(-(t-hold)*14) : 1;
+    const hp = cur - 0.6*prev; prev = cur;
+    out[s0+i] += (0.75*cur + 0.35*hp)*rel;
+  }
+}
+
+/* =============== 入れ物（ヘッダ＋区画） =============== */
+/* 'V' 'Q' 0x02 ／ 区画：種類(1) 長さ(2) 中身 ／ 種類1＝声、2＝メロディ */
+function buildPayload(pcm, modeId, melData){
+  const melSec = melData ? 3 + melData.length : 0;
+  let voice = null;
+  if (pcm){
+    const room = CAP - 3 - melSec - 3 - 3;
+    if (room > 0) voice = encodeVoice(pcm, modeId, room);
+    if (voice && voice.seconds === 0) voice = null;
+  }
+  const parts = [];
+  if (voice) parts.push([1, voice.data]);
+  if (melData) parts.push([2, melData]);
+  let len = 3; parts.forEach(([,d]) => len += 3 + d.length);
+  const out = new Uint8Array(len); out[0]=0x56; out[1]=0x51; out[2]=0x02; let o = 3;
+  for (const [type, d] of parts){ out[o]=type; out[o+1]=d.length>>8; out[o+2]=d.length&255; out.set(d, o+3); o += 3 + d.length; }
+  return { bytes: out, voiceSec: voice ? voice.seconds : 0 };
+}
+function parsePayload(bytes){
+  if (bytes.length < 3 || bytes[0] !== 0x56 || bytes[1] !== 0x51) throw new Error("notours");
+  const res = { voice:null, melody:null };
+  if (bytes[2] === 0x02){
+    let o = 3;
+    while (o + 3 <= bytes.length){
+      const type = bytes[o], len = (bytes[o+1]<<8) | bytes[o+2], d = bytes.subarray(o+3, o+3+len);
+      if (type === 1) res.voice = decodeVoice(d);
+      else if (type === 2) res.melody = decodeMelody(d);
+      o += 3 + len;
+    }
+  } else res.voice = decodeVoice(bytes.subarray(2));   /* 試作版0.1の形式 */
+  if (!res.voice && !res.melody) throw new Error("empty");
+  return res;
+}
+
+/* =============== 音の下ごしらえ =============== */
+let actx = null;
+function audioCtx(){ if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === "suspended") actx.resume(); return actx; }
+function toMono(buf){ const n = buf.length, ch = buf.numberOfChannels, m = new Float32Array(n);
+  for (let c=0;c<ch;c++){ const d = buf.getChannelData(c); for (let i=0;i<n;i++) m[i] += d[i]/ch; } return m; }
+function resampleTo8k(x, sr){
+  if (sr === 8000) return x;
+  const ratio = sr/8000, n = Math.floor(x.length/ratio), y = new Float32Array(n);
+  const fc = 3600/sr, half = Math.max(4, Math.ceil(6*ratio));
+  for (let i=0;i<n;i++){
+    const t = i*ratio, c = Math.floor(t); let s = 0, w = 0;
+    for (let k=Math.max(0,c-half+1); k<=Math.min(x.length-1,c+half); k++){ const d = t-k;
+      const h = (d===0 ? 2*fc : Math.sin(2*Math.PI*fc*d)/(Math.PI*d))*(0.5+0.5*Math.cos(Math.PI*d/half)); s += x[k]*h; w += h; }
+    y[i] = w ? s/w : 0;
+  }
+  return y;
+}
+function trimAndNormalize(y){
+  const win = 160, nw = Math.floor(y.length/win); if (nw < 2) return y;
+  const rms = new Float32Array(nw); let peakR = 0;
+  for (let j=0;j<nw;j++){ let s=0; for (let i=j*win;i<(j+1)*win;i++) s += y[i]*y[i]; rms[j] = Math.sqrt(s/win); if (rms[j]>peakR) peakR = rms[j]; }
+  const th = Math.max(peakR*0.06, 0.004);
+  let a = 0, b = nw-1; while (a<nw && rms[a]<th) a++; while (b>a && rms[b]<th) b--;
+  a = Math.max(0,a-8); b = Math.min(nw-1,b+8);
+  const z = y.slice(a*win, (b+1)*win);
+  let pk = 0; for (let i=0;i<z.length;i++) pk = Math.max(pk, Math.abs(z[i]));
+  const g = pk > 0 ? 0.8/pk : 1; for (let i=0;i<z.length;i++) z[i] *= g;
+  return z;
+}
+function toInt16(f){ const o = new Int16Array(f.length); for (let i=0;i<f.length;i++) o[i] = Math.max(-32768, Math.min(32767, Math.round(f[i]*32767))); return o; }
+async function prepareAudio(arrayBuf){
+  const ctx = audioCtx();
+  const buf = await new Promise((res, rej) => { const p = ctx.decodeAudioData(arrayBuf, res, rej); if (p && p.then) p.then(res, rej); });
+  let m = toMono(buf); const maxIn = Math.floor(buf.sampleRate*60); if (m.length > maxIn) m = m.subarray(0, maxIn);
+  return toInt16(trimAndNormalize(resampleTo8k(m, buf.sampleRate)));
+}
+
+/* =============== 再生（声 → 少しあけて → メロディ） =============== */
+/* iPhoneの消音スイッチでも鳴るよう、WAVにしてaudio要素で再生する。だめならWeb Audioで鳴らす */
+let audioEl = null, playingBtn = null, playingLabel = "", webSrc = null, lastUrl = null;
+function resetBtn(){ if (playingBtn){ playingBtn.textContent = playingLabel; playingBtn = null; } }
+function stopAll(){
+  if (audioEl){ audioEl.onended = null; audioEl.pause(); }
+  if (webSrc){ try{ webSrc.onended = null; webSrc.stop(); }catch(e){} webSrc = null; }
+  resetBtn();
+}
+function mixToFloat(content, sr){
+  const parts = [];
+  if (content.voice){ const pcm = content.voice.pcm, r = sr/8000, n = Math.floor(pcm.length*r), v = new Float32Array(n);
+    for (let i=0;i<n;i++){ const t = i/r, k = Math.floor(t), f = t-k; v[i] = ((pcm[k]||0)*(1-f) + (pcm[k+1]||0)*f)/32768; }
+    parts.push(v); }
+  if (content.melody && content.melody.notes.length){ if (parts.length) parts.push(new Float32Array(Math.floor(sr*0.5))); parts.push(renderMelody(content.melody, sr)); }
+  let len = 0; parts.forEach(p => len += p.length);
+  const out = new Float32Array(len); let o = 0; parts.forEach(p => { out.set(p, o); o += p.length; });
+  return out;
+}
+function wavBlob(f, sr){
+  const n = f.length, buf = new ArrayBuffer(44 + n*2), dv = new DataView(buf);
+  const w = (o, s) => { for (let i=0;i<s.length;i++) dv.setUint8(o+i, s.charCodeAt(i)); };
+  w(0,"RIFF"); dv.setUint32(4, 36+n*2, true); w(8,"WAVE"); w(12,"fmt "); dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,1,true);
+  dv.setUint32(24,sr,true); dv.setUint32(28,sr*2,true); dv.setUint16(32,2,true); dv.setUint16(34,16,true); w(36,"data"); dv.setUint32(40,n*2,true);
+  for (let i=0;i<n;i++) dv.setInt16(44+i*2, Math.max(-32768, Math.min(32767, Math.round(f[i]*32767))), true);
+  return new Blob([buf], { type:"audio/wav" });
+}
+function playWebAudio(f, sr, btn){
+  try {
+    const ctx = audioCtx(), b = ctx.createBuffer(1, f.length, sr); b.getChannelData(0).set(f);
+    const s = ctx.createBufferSource(); s.buffer = b; s.connect(ctx.destination);
+    s.onended = () => { if (webSrc === s){ webSrc = null; resetBtn(); } };
+    s.start(); webSrc = s;
+  } catch(e){ resetBtn(); }
+}
+function playContent(content, btn){
+  const wasMe = playingBtn === btn; stopAll(); if (wasMe) return;
+  const sr = 44100, f = mixToFloat(content, sr); if (!f.length) return;
+  playingBtn = btn; playingLabel = btn.textContent; btn.textContent = "■ 止める";
+  if (!audioEl){ audioEl = new Audio(); audioEl.preload = "auto"; }
+  if (lastUrl) URL.revokeObjectURL(lastUrl);
+  lastUrl = URL.createObjectURL(wavBlob(f, sr));
+  audioEl.src = lastUrl;
+  audioEl.onended = () => resetBtn();
+  const p = audioEl.play();
+  if (p && p.catch) p.catch(() => { audioEl.onended = null; playWebAudio(f, sr, btn); });
+}
+
+/* =============== QR =============== */
+function makeQR(bytes){
+  const qr = qrcode(0, "M"); let s = ""; for (let i=0;i<bytes.length;i++) s += String.fromCharCode(bytes[i]);
+  qr.addData(s, "Byte"); qr.make();
+  const n = qr.getModuleCount(), cell = 4, m = 4, size = (n + m*2)*cell;
+  const cv = document.createElement("canvas"); cv.width = size; cv.height = size;
+  const g = cv.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0,0,size,size); g.fillStyle = "#000";
+  for (let r=0;r<n;r++) for (let c=0;c<n;c++) if (qr.isDark(r,c)) g.fillRect((c+m)*cell, (r+m)*cell, cell, cell);
+  return { canvas: cv, version: (n-17)/4 };
+}
+function readQRFromCanvas(cv){
+  const g = cv.getContext("2d", { willReadFrequently:true });
+  const r = jsQR(g.getImageData(0,0,cv.width,cv.height).data, cv.width, cv.height, { inversionAttempts:"attemptBoth" });
+  return r && r.binaryData ? new Uint8Array(r.binaryData) : null;
+}
+
+/* =============== マイク・カメラが使えないときの案内 =============== */
+const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const IN_APP = /Line\/|FBAN|FBAV|Instagram|; wv\)/i.test(navigator.userAgent);
+function deviceMsg(kind, e){
+  const what = kind === "mic" ? "マイク" : "カメラ";
+  const alt = kind === "mic" ? "録音できないときは「音声ファイルを選ぶ」も使えます。" : "カメラが使えないときは「写真から読み取る」も使えます。";
+  const n = e && e.name;
+  if (n === "NoApi" || IN_APP) return "このブラウザでは" + what + "が使えません。LINEなどのアプリの中で開いている場合は、" + (IS_IOS ? "Safari" : "Chrome") + "で開き直してください。" + alt;
+  if (n === "NotAllowedError" || n === "SecurityError"){
+    if (IS_IOS) return what + "の使用が許可されていません。iPhoneの「設定」→「アプリ」→「Safari」→「" + what + "」を「確認」か「許可」にしてから、このページを開き直してください。ホーム画面から開いている場合は、一度アプリを閉じて開き直すと、もう一度たずねられます。" + alt;
+    return what + "の使用が許可されていません。Chromeのアドレスバー左のマーク、またはメニュー（︙）→「設定」→「サイトの設定」→「" + what + "」で、このページを「許可」にしてください。スマホ本体の「設定」→「アプリ」→「Chrome」→「権限」で" + what + "が許可されているかも確認してください。" + alt;
+  }
+  if (n === "NotReadableError" || n === "AbortError") return what + "をほかのアプリが使っているようです。通話や録音・カメラのアプリを閉じてから、もう一度押してください。" + alt;
+  if (n === "NotFoundError" || n === "OverconstrainedError") return what + "が見つかりませんでした。" + alt;
+  return what + "を使えませんでした（" + (n || "不明なエラー") + "）。" + alt;
+}
+
+/* =============== 画面：共通 =============== */
+function show(el, cls, text){ el.className = "msg " + cls; el.textContent = text; el.hidden = !text; }
+function selectTab(which){
+  const make = which === "make";
+  $("tabMake").setAttribute("aria-selected", make); $("tabRead").setAttribute("aria-selected", !make);
+  $("panelMake").hidden = !make; $("panelRead").hidden = make;
+  if (make) stopCam(); stopAll();
+}
+$("tabMake").addEventListener("click", () => selectTab("make"));
+$("tabRead").addEventListener("click", () => selectTab("read"));
+const curMode = () => Number(document.querySelector('input[name="mode"]:checked').value);
+const curInst = () => Number(document.querySelector('input[name="inst"]:checked').value);
+const fmtSec = s => s ? s.toFixed(1) : "0";
+
+/* =============== 画面：作る =============== */
+const SAMPLES = {
+  kkk:    { text:"工 工 八 八 九 九 八ー\n七 七 六 六 五 五 工ー\n八 八 七 七 六 六 五ー\n八 八 七 七 六 六 五ー\n工 工 八 八 九 九 八ー\n七 七 六 六 五 五 工ー", inst:2, tempo:108 },
+  doremi: { text:"ド ド ソ ソ ラ ラ ソー\nファ ファ ミ ミ レ レ ドー\nソ ソ ファ ファ ミ ミ レー\nソ ソ ファ ファ ミ ミ レー\nド ド ソ ソ ラ ラ ソー\nファ ファ ミ ミ レ レ ドー", inst:0, tempo:108 },
+  ryukyu: { text:"ド ミ ファ ソー シ ↑ドー\nシ ソ ファ ミー ファ_ ソ_ ミ ドー ・\nミ ソ シ ↑ドー ↑ミ_ ↑レ_ ↑ドー\nシ ソ ファ ミ ドーー", inst:2, tempo:96 }
+};
+let lastPCM = null, lastPayload = null, lastQR = null, maxSec = 15, melState = { notes:[], data:null };
+function maxVoiceSeconds(id){ const m = modeInfo(id); const melSec = melState.data ? 3 + melState.data.length : 0;
+  return Math.max(0, Math.floor((CAP-3-melSec-6)*8/m.nb)) * m.spf / 8000; }
+function refreshCaps(){
+  const saveMel = melState; $("capHq").textContent = "最大 " + Math.floor(maxVoiceSeconds(5)) + "秒"; $("capLong").textContent = "最大 " + Math.floor(maxVoiceSeconds(8)) + "秒"; melState = saveMel;
+  maxSec = maxVoiceSeconds(curMode());
+  $("recSecs").innerHTML = "0.0<small> 秒 / 最大 " + Math.floor(maxSec) + "秒</small>";
+}
+function readMelodyInput(){
+  const { notes, bad } = parseMelody($("melText").value);
+  const tempo = Number($("tempo").value);
+  $("tempoOut").textContent = "♩＝" + tempo;
+  if (bad.length) show($("melMsg"), "warn", "読めない文字がありました：「" + bad.slice(0,6).join("」「") + "」。書き方を確認してください。");
+  else if (notes.length) { const secs = notes.reduce((a,[,u]) => a + u/4*60/tempo, 0); show($("melMsg"), "ok", notes.length + " 音・約 " + Math.round(secs) + " 秒のメロディです。"); }
+  else show($("melMsg"), "", "");
+  if (notes.length > 1100) { show($("melMsg"), "warn", "音が多すぎます（" + notes.length + " 音）。1,100音までにしてください。"); melState = { notes:[], data:null }; return; }
+  melState = notes.length ? { notes, data: encodeMelody(notes, tempo, curInst()) } : { notes:[], data:null };
+}
+function rebuild(){
+  if (!C2) return;
+  readMelodyInput(); refreshCaps();
+  if (!lastPCM && !melState.data){ $("outCard").hidden = true; lastPayload = null; return; }
+  const p = buildPayload(lastPCM, curMode(), melState.data);
+  lastPayload = p.bytes;
+  const qr = makeQR(p.bytes); lastQR = qr;
+  const url = qr.canvas.toDataURL("image/png"); $("qrImg").src = url; $("printImg").src = url;
+  const parts = []; if (p.voiceSec) parts.push("声 " + fmtSec(p.voiceSec) + "秒"); if (melState.data) parts.push("メロディ " + melState.notes.length + "音（" + INST_NAME[curInst()] + "）");
+  $("qrCap").textContent = "声のQR ・ " + parts.join(" ＋ ");
+  $("printCap").textContent = "声のQR（" + parts.join(" ＋ ") + "）　読み取りは「声のQR」ページで";
+  $("stSec").textContent = fmtSec(p.voiceSec); $("stNotes").textContent = melState.notes.length;
+  $("stBytes").textContent = p.bytes.length.toLocaleString("ja-JP"); $("stVer").textContent = qr.version;
+  $("outCard").hidden = false; show($("testMsg"), "", "");
+  if (lastPCM){ const orig = lastPCM.length/8000;
+    if (orig > p.voiceSec + 0.2) show($("makeMsg"), "warn", "声が長かったので、最初の " + fmtSec(p.voiceSec) + " 秒だけを入れました。メロディを短くするか「長さ優先」にすると、もう少し入ります。");
+    else show($("makeMsg"), "ok", fmtSec(p.voiceSec) + " 秒の声を入れました。"); }
+}
+let melTimer = 0;
+$("melText").addEventListener("input", () => { clearTimeout(melTimer); melTimer = setTimeout(rebuild, 350); });
+$("tempo").addEventListener("input", () => { clearTimeout(melTimer); melTimer = setTimeout(rebuild, 200); $("tempoOut").textContent = "♩＝" + $("tempo").value; });
+document.querySelectorAll('input[name="inst"],input[name="mode"]').forEach(r => r.addEventListener("change", rebuild));
+document.querySelectorAll("[data-sample]").forEach(b => b.addEventListener("click", () => {
+  const s = SAMPLES[b.dataset.sample]; $("melText").value = s.text; $("tempo").value = s.tempo;
+  document.getElementById("inst" + s.inst).checked = true; rebuild();
+}));
+$("melClear").addEventListener("click", () => { $("melText").value = ""; rebuild(); $("melText").focus(); });
+$("melPlay").addEventListener("click", () => { readMelodyInput(); if (!melState.data) return; playContent({ melody: decodeMelody(melState.data) }, $("melPlay")); });
+
+async function handleAudio(arrayBuf){
+  show($("makeMsg"), "info", "声を圧縮しています…");
+  try { const pcm = await prepareAudio(arrayBuf);
+    if (pcm.length < 1600) { show($("makeMsg"), "warn", "声がほとんど入っていませんでした。もう少し大きな声で、スマホに近づいて録音してください。"); return; }
+    lastPCM = pcm; $("clearVoice").hidden = false; rebuild(); }
+  catch(e){ show($("makeMsg"), "warn", "この音声ファイルは読み込めませんでした。別の形式（m4a、mp3、wav など）で試してください。"); }
+}
+$("audioFile").addEventListener("change", async e => { const f = e.target.files[0]; if (!f) return; e.target.value = ""; await handleAudio(await f.arrayBuffer()); });
+$("clearVoice").addEventListener("click", () => { lastPCM = null; $("clearVoice").hidden = true; show($("makeMsg"), "", ""); rebuild(); });
+
+let rec = null, recStream = null, recChunks = [], recT0 = 0, recTimer = 0;
+async function startRec(){
+  audioCtx(); stopAll();
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ show($("makeMsg"), "warn", deviceMsg("mic", {name:"NoApi"})); return; }
+  if (typeof MediaRecorder === "undefined"){ show($("makeMsg"), "warn", "このブラウザは録音に対応していません。iPhoneはiOSを新しくするか、「音声ファイルを選ぶ」を使ってください。"); return; }
+  try { recStream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true } }); }
+  catch(e){
+    if (e && (e.name === "NotAllowedError" || e.name === "SecurityError")) { show($("makeMsg"), "warn", deviceMsg("mic", e)); return; }
+    try { recStream = await navigator.mediaDevices.getUserMedia({ audio:true }); }
+    catch(e2){ show($("makeMsg"), "warn", deviceMsg("mic", e2)); return; }
+  }
+  recChunks = [];
+  try { rec = new MediaRecorder(recStream); } catch(e){ recStream.getTracks().forEach(t => t.stop()); show($("makeMsg"), "warn", "録音を始められませんでした。「音声ファイルを選ぶ」を使ってください。"); return; }
+  rec.ondataavailable = ev => { if (ev.data && ev.data.size) recChunks.push(ev.data); };
+  rec.onstop = async () => { recStream.getTracks().forEach(t => t.stop()); const blob = new Blob(recChunks, { type: rec.mimeType || "audio/webm" }); rec = null; await handleAudio(await blob.arrayBuffer()); };
+  rec.start(); recT0 = performance.now();
+  $("recBtn").classList.add("on"); $("recBtn").textContent = "止める"; $("recBtn").setAttribute("aria-label","録音を止める");
+  show($("makeMsg"), "info", "録音中です。話し終わったら「止める」を押してください。");
+  recTimer = setInterval(() => {
+    const s = (performance.now()-recT0)/1000;
+    $("recSecs").innerHTML = s.toFixed(1) + "<small> 秒 / 最大 " + Math.floor(maxSec) + "秒</small>";
+    $("recBar").style.width = Math.min(100, s/Math.max(maxSec,1)*100) + "%";
+    if (s >= maxSec + 1.5) stopRec();
+  }, 100);
+}
+function stopRec(){ clearInterval(recTimer); $("recBtn").classList.remove("on"); $("recBtn").textContent = "録音"; $("recBtn").setAttribute("aria-label","録音を始める"); if (rec && rec.state !== "inactive") rec.stop(); }
+$("recBtn").addEventListener("click", () => { if (!C2) return; rec ? stopRec() : startRec(); });
+$("previewBtn").addEventListener("click", () => { if (lastPayload) playContent(parsePayload(lastPayload), $("previewBtn")); });
+$("selfTestBtn").addEventListener("click", () => {
+  if (!lastQR) return;
+  const got = readQRFromCanvas(lastQR.canvas);
+  if (!got){ show($("testMsg"), "warn", "読み取りに失敗しました。"); return; }
+  const same = got.length === lastPayload.length && got.every((v,i) => v === lastPayload[i]);
+  if (!same){ show($("testMsg"), "warn", "読み取れましたが、中身が一致しませんでした。"); return; }
+  const c = parsePayload(got);
+  show($("testMsg"), "ok", "QRを読み取り、中身を取り出せました（" + describe(c) + "）。再生します。");
+  playContent(c, $("selfTestBtn"));
+});
+if (STANDALONE){ $("printBtn").hidden = false; $("printBtn").addEventListener("click", () => window.print()); }
+
+/* =============== 画面：読む =============== */
+function describe(c){ const p = []; if (c.voice) p.push(fmtSec(c.voice.seconds) + " 秒の声"); if (c.melody) p.push(c.melody.notes.length + " 音のメロディ（" + (INST_NAME[c.melody.inst] || "") + "）"); return p.join(" と "); }
+let lastRead = null, camStream = null, scanning = false;
+const scanCv = document.createElement("canvas");
+function onRead(bytes){
+  try { const c = parsePayload(bytes); lastRead = c;
+    $("rdText").textContent = describe(c) + " が入っていました。";
+    $("resultCard").hidden = false; show($("readMsg"), "ok", "読み取れました。「再生する」を押してください。"); $("playBtn").focus(); }
+  catch(e){ show($("readMsg"), "warn", "QRコードは読めましたが、声のQRではありませんでした。"); }
+}
+function scanLoop(){
+  if (!scanning) return;
+  const v = $("video");
+  if (v.readyState >= 2 && v.videoWidth){
+    scanCv.width = v.videoWidth; scanCv.height = v.videoHeight;
+    scanCv.getContext("2d", { willReadFrequently:true }).drawImage(v, 0, 0);
+    const got = readQRFromCanvas(scanCv); if (got){ stopCam(); onRead(got); return; }
+  }
+  setTimeout(scanLoop, 180);
+}
+async function startCam(){
+  show($("readMsg"), "", "");
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ show($("readMsg"), "warn", deviceMsg("cam", {name:"NoApi"})); return; }
+  try { camStream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:"environment" }, width:{ ideal:1920 }, height:{ ideal:1080 } }, audio:false }); }
+  catch(e){
+    if (e && (e.name === "NotAllowedError" || e.name === "SecurityError")) { show($("readMsg"), "warn", deviceMsg("cam", e)); return; }
+    try { camStream = await navigator.mediaDevices.getUserMedia({ video:true, audio:false }); }
+    catch(e2){ show($("readMsg"), "warn", deviceMsg("cam", e2)); return; }
+  }
+  const v = $("video"); v.srcObject = camStream; $("camBox").hidden = false; $("camStop").hidden = false;
+  try { await v.play(); } catch(e){}
+  scanning = true; scanLoop();
+}
+function stopCam(){ scanning = false; if (camStream){ camStream.getTracks().forEach(t => t.stop()); camStream = null; } $("camBox").hidden = true; $("camStop").hidden = true; }
+$("camBtn").addEventListener("click", () => { if (C2) startCam(); });
+$("camStop").addEventListener("click", stopCam);
+$("photoFile").addEventListener("change", e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f || !C2) return;
+  show($("readMsg"), "info", "写真を調べています…");
+  const url = URL.createObjectURL(f); const img = new Image();
+  img.onload = () => {
+    URL.revokeObjectURL(url);
+    for (const maxSide of [2400, 1800, 1200, 3200]){
+      const sc = Math.min(1, maxSide/Math.max(img.width, img.height));
+      scanCv.width = Math.round(img.width*sc); scanCv.height = Math.round(img.height*sc);
+      scanCv.getContext("2d", { willReadFrequently:true }).drawImage(img, 0, 0, scanCv.width, scanCv.height);
+      const got = readQRFromCanvas(scanCv); if (got){ onRead(got); return; }
+    }
+    show($("readMsg"), "warn", "QRコードが見つかりませんでした。QRが写真の大部分を占めるように、正面からピントを合わせて撮り直してください。");
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); show($("readMsg"), "warn", "この写真は開けませんでした。"); };
+  img.src = url;
+});
+$("playBtn").addEventListener("click", () => { if (lastRead) playContent(lastRead, $("playBtn")); });
+
+/* =============== 起動 =============== */
+$("melText").value = SAMPLES.kkk.text; $("tempo").value = SAMPLES.kkk.tempo; $("tempoOut").textContent = "♩＝" + SAMPLES.kkk.tempo;
+initCodec().then(() => { rebuild(); show($("melMsg"), "info", "見本として「きらきら星」を工工四で入れてあります。書きかえて使ってください。"); }).catch(() => {
+  show($("codecMsg"), "warn", "この画面では声の圧縮部品を動かせませんでした。ダウンロードしたファイル版を、ブラウザで開いて使ってください。");
+  ["recBtn","camBtn"].forEach(id => $(id).disabled = true);
+});
+if (STANDALONE && "serviceWorker" in navigator && SECURE) navigator.serviceWorker.register("sw.js").catch(() => {});
+if (STANDALONE){
+  const isApp = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+  let deferred = null;
+  window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); deferred = e; $("installBtn").hidden = false; });
+  $("installBtn").addEventListener("click", async () => { if (!deferred) return; deferred.prompt(); try { await deferred.userChoice; } catch(e){} deferred = null; $("installBtn").hidden = true; });
+  if (!isApp && SECURE){
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    $("installText").textContent = ios
+      ? "Safariの共有ボタン（□に↑）→「ホーム画面に追加」を選ぶと、ネットがなくても使えるアプリとしてホーム画面に置けます。"
+      : "ブラウザのメニュー（︙）→「ホーム画面に追加」または「アプリをインストール」を選ぶと、ネットがなくても使えるアプリとしてホーム画面に置けます。";
+    $("installCard").hidden = false;
+  }
+  if ("serviceWorker" in navigator && SECURE)
+    navigator.serviceWorker.ready.then(() => { $("offlineStatus").textContent = "この端末には保存済みです。ネットがなくても開けます。"; }).catch(() => {});
+}
+window.__koe = { mixToFloat, wavBlob, audio: () => audioEl, buildPayload, parsePayload, parseMelody, encodeMelody, renderMelody, makeQR, readQRFromCanvas, ready: () => !!C2 };
+})();
+</script>

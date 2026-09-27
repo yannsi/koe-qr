@@ -15,3 +15,9 @@
 工工四の音高は本調子（合＝ド、工＝上のド、尺＝シ♭、尺#＝シ）で鳴らしています。
 
 QRコードは株式会社デンソーウェーブの登録商標です。
+
+## 開発のしかた
+- 編集するのは `src/app.html`。`python3 tools/build.py` で公開用の `index.html` と `sw.js` を作り、`python3 tools/test.py` で動作を確かめる。
+- `main` 以外のブランチに送ると、7日間有効の確認用アドレス（Firebaseのプレビュー）に自動で公開される。
+- `main` に入ると https://koe-qr.web.app/ に自動で公開される。
+- 詳しい決まりごとは `CLAUDE.md` を参照。

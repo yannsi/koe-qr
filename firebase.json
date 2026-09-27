@@ -1,7 +1,7 @@
 {
   "hosting": {
     "public": ".",
-    "ignore": ["firebase.json", "README.md", "**/.*", "**/node_modules/**"],
+    "ignore": ["firebase.json", "README.md", "CLAUDE.md", "src/**", "tools/**", "vendor/**", "**/.*", "**/node_modules/**"],
     "headers": [
       { "source": "/sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
       { "source": "/index.html", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
