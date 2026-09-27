@@ -12,7 +12,11 @@ permissions:
   statuses: write
 
 jobs:
+  check:
+    uses: ./.github/workflows/check.yml
+
   preview:
+    needs: check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

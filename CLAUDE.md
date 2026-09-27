@@ -19,7 +19,8 @@
 | `src/app.html` | **編集するのはここ**。画面・処理のすべて（ライブラリは差し込み口だけ） |
 | `vendor/` | 同梱する部品：`qrcode.js`（MIT）、`jsQR.js`（Apache-2.0）、`codec2.wasm`（LGPL-2.1）とライセンス文 |
 | `tools/build.py` | `src/app.html` と `vendor/` から、公開用の `index.html` と `sw.js` を組み立てる |
-| `tools/test.py` | 公開用 `index.html` の動作確認（QRの往復・写真からの読み取り・再生） |
+| `tools/test.py` | 公開用 `index.html` の動作確認（QRの往復・写真からの読み取り・再生）。GitHub Actions でも公開前に毎回動く |
+| `.github/workflows/` | `check.yml`＝動作確認、`firebase-preview.yml`＝確認用に公開、`firebase-hosting.yml`＝本番に公開 |
 | `tools/codec2/` | `codec2.wasm` を作り直す手順（ふだんは不要） |
 | `index.html` `sw.js` | **生成物。直接編集しない**（build.py で作り直す） |
 | `manifest.webmanifest` `icon-*.png` | ホーム画面に置くための設定とアイコン |
@@ -30,7 +31,8 @@
 2. `src/app.html` を編集し、見出しの「試作版 X.Y.Z」を上げる（直しは3桁目、機能追加は2桁目）。
    版を上げると `sw.js` の保存名が変わり、スマホに保存された古い版が入れ替わる。
 3. `python3 tools/build.py` → `python3 tools/test.py`。NGが1つでもあれば直してからにする。
-4. ブランチを push する。GitHub Actions「確認用に公開」が、7日間有効の確認用アドレスに公開する。
+4. ブランチを push する。GitHub Actions「確認用に公開」が、まず「動作確認」（組み立て直した結果の一致＋tools/test.py）を通し、
+   通ったときだけ7日間有効の確認用アドレスに公開する。動作確認がNGなら公開されない（main も同じ）。
    アドレスはそのコミットのステータス（`GET /repos/yannsi/koe-qr/commits/{sha}/statuses` の
    `target_url`、context「確認用アドレス」）で分かる。
 5. 確認用アドレスを神里さんに伝え、スマホで確かめてもらう。**OKをもらうまで main に入れない。**

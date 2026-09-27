@@ -1,0 +1,34 @@
+# 公開の前に必ず通す動作確認（ほかのワークフローから呼び出して使う）
+#  1. src/app.html から組み立て直した index.html・sw.js が、送られたものと一致するか
+#  2. 画面なしのブラウザで、QRの往復・写真からの読み取り・再生ができるか（tools/test.py）
+name: 動作確認
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 組み立て直して、送られた公開ファイルと一致するか確かめる
+        run: |
+          python3 tools/build.py
+          if ! git diff --quiet -- index.html sw.js; then
+            echo "::error::index.html か sw.js が src/app.html と合っていません。python3 tools/build.py を実行してから送ってください。"
+            git diff --stat -- index.html sw.js
+            exit 1
+          fi
+      - name: 確認用のブラウザを用意する
+        run: |
+          pip install playwright==1.56.0
+          python3 -m playwright install --with-deps chromium
+      - name: 動作確認（tools/test.py）
+        run: python3 tools/test.py
