@@ -118,7 +118,7 @@ footer a{color:var(--ai);}
 
 <div class="wrap">
   <header style="display:flex;flex-direction:column;gap:6px">
-    <h1>声のQR<small>試作版 0.3</small></h1>
+    <h1>声のQR<small>試作版 0.3.1</small></h1>
     <p class="lead">録音した声とメロディを、QRコードの中にそのまま入れます。読み取るときにネットはいりません。</p>
   </header>
 
@@ -12930,6 +12930,23 @@ function readQRFromCanvas(cv){
   return r && r.binaryData ? new Uint8Array(r.binaryData) : null;
 }
 
+/* =============== マイク・カメラが使えないときの案内 =============== */
+const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const IN_APP = /Line\/|FBAN|FBAV|Instagram|; wv\)/i.test(navigator.userAgent);
+function deviceMsg(kind, e){
+  const what = kind === "mic" ? "マイク" : "カメラ";
+  const alt = kind === "mic" ? "録音できないときは「音声ファイルを選ぶ」も使えます。" : "カメラが使えないときは「写真から読み取る」も使えます。";
+  const n = e && e.name;
+  if (n === "NoApi" || IN_APP) return "このブラウザでは" + what + "が使えません。LINEなどのアプリの中で開いている場合は、" + (IS_IOS ? "Safari" : "Chrome") + "で開き直してください。" + alt;
+  if (n === "NotAllowedError" || n === "SecurityError"){
+    if (IS_IOS) return what + "の使用が許可されていません。iPhoneの「設定」→「アプリ」→「Safari」→「" + what + "」を「確認」か「許可」にしてから、このページを開き直してください。ホーム画面から開いている場合は、一度アプリを閉じて開き直すと、もう一度たずねられます。" + alt;
+    return what + "の使用が許可されていません。Chromeのアドレスバー左のマーク、またはメニュー（︙）→「設定」→「サイトの設定」→「" + what + "」で、このページを「許可」にしてください。スマホ本体の「設定」→「アプリ」→「Chrome」→「権限」で" + what + "が許可されているかも確認してください。" + alt;
+  }
+  if (n === "NotReadableError" || n === "AbortError") return what + "をほかのアプリが使っているようです。通話や録音・カメラのアプリを閉じてから、もう一度押してください。" + alt;
+  if (n === "NotFoundError" || n === "OverconstrainedError") return what + "が見つかりませんでした。" + alt;
+  return what + "を使えませんでした（" + (n || "不明なエラー") + "）。" + alt;
+}
+
 /* =============== 画面：共通 =============== */
 function show(el, cls, text){ el.className = "msg " + cls; el.textContent = text; el.hidden = !text; }
 function selectTab(which){
@@ -13010,9 +13027,16 @@ $("clearVoice").addEventListener("click", () => { lastPCM = null; $("clearVoice"
 let rec = null, recStream = null, recChunks = [], recT0 = 0, recTimer = 0;
 async function startRec(){
   audioCtx(); stopAll();
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ show($("makeMsg"), "warn", deviceMsg("mic", {name:"NoApi"})); return; }
+  if (typeof MediaRecorder === "undefined"){ show($("makeMsg"), "warn", "このブラウザは録音に対応していません。iPhoneはiOSを新しくするか、「音声ファイルを選ぶ」を使ってください。"); return; }
   try { recStream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true } }); }
-  catch(e){ show($("makeMsg"), "warn", "マイクを使えませんでした。ブラウザの設定でマイクを許可するか、「音声ファイルを選ぶ」を使ってください。"); return; }
-  recChunks = []; rec = new MediaRecorder(recStream);
+  catch(e){
+    if (e && (e.name === "NotAllowedError" || e.name === "SecurityError")) { show($("makeMsg"), "warn", deviceMsg("mic", e)); return; }
+    try { recStream = await navigator.mediaDevices.getUserMedia({ audio:true }); }
+    catch(e2){ show($("makeMsg"), "warn", deviceMsg("mic", e2)); return; }
+  }
+  recChunks = [];
+  try { rec = new MediaRecorder(recStream); } catch(e){ recStream.getTracks().forEach(t => t.stop()); show($("makeMsg"), "warn", "録音を始められませんでした。「音声ファイルを選ぶ」を使ってください。"); return; }
   rec.ondataavailable = ev => { if (ev.data && ev.data.size) recChunks.push(ev.data); };
   rec.onstop = async () => { recStream.getTracks().forEach(t => t.stop()); const blob = new Blob(recChunks, { type: rec.mimeType || "audio/webm" }); rec = null; await handleAudio(await blob.arrayBuffer()); };
   rec.start(); recT0 = performance.now();
@@ -13062,8 +13086,13 @@ function scanLoop(){
 }
 async function startCam(){
   show($("readMsg"), "", "");
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ show($("readMsg"), "warn", deviceMsg("cam", {name:"NoApi"})); return; }
   try { camStream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:"environment" }, width:{ ideal:1920 }, height:{ ideal:1080 } }, audio:false }); }
-  catch(e){ show($("readMsg"), "warn", "カメラを使えませんでした。ブラウザの設定でカメラを許可するか、「写真から読み取る」を使ってください。"); return; }
+  catch(e){
+    if (e && (e.name === "NotAllowedError" || e.name === "SecurityError")) { show($("readMsg"), "warn", deviceMsg("cam", e)); return; }
+    try { camStream = await navigator.mediaDevices.getUserMedia({ video:true, audio:false }); }
+    catch(e2){ show($("readMsg"), "warn", deviceMsg("cam", e2)); return; }
+  }
   const v = $("video"); v.srcObject = camStream; $("camBox").hidden = false; $("camStop").hidden = false;
   try { await v.play(); } catch(e){}
   scanning = true; scanLoop();
