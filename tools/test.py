@@ -10,6 +10,7 @@
   4. カメラで読める形（https://koe-qr.web.app/#…）でも 2 と同じように読み戻せ、
      いちばん長い声を入れても型番40に収まる。古い形（先頭が VQ）も今までどおり収まる
   5. そのアドレスで開くと「届いた声のQR」が出て、再生できる
+  6. ひとこと（種類3）が往復し、届いた画面に出る。「リンクで送る」で送ったリンクを開くと聞ける
 """
 import os, sys, math, base64
 from playwright.sync_api import sync_playwright
@@ -112,6 +113,46 @@ with sync_playwright() as pw:
     p2.goto(URL + "#ABC%"); p2.reload()
     p2.wait_for_selector("#linkMsg:not([hidden])", timeout=15000)
     check("壊れたアドレスでは読めないと知らせる", p2.is_hidden("#linkCard"))
+    # ひとこと（種類3）と「リンクで送る」
+    MSG = "はなより お誕生日おめでとう🎂"
+    ctx = b.new_context(viewport={"width": 400, "height": 860})
+    ctx.add_init_script("""window.__shared = []; navigator.share = async d => { window.__shared.push(d); };""")
+    p5 = ctx.new_page(); p5.on("pageerror", lambda e: errs.append(str(e)))
+    p5.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    p5.goto(URL); p5.wait_for_selector("#outCard:not([hidden])", timeout=15000)
+    rt = p5.evaluate("""([pcm, msg]) => { const k = __koe;
+      const pl = k.buildPayload(Int16Array.from(pcm), 5, null, k.CAP, new TextEncoder().encode(msg));
+      const c = k.parsePayload(pl.bytes); return { text: c.text, voice: c.voice ? c.voice.seconds : 0 }; }""", [pcm, MSG])
+    check("ひとことが往復する", rt["text"] == MSG and rt["voice"] > 2.9, str(rt))
+    cap0 = p5.inner_text("#capHq")
+    p5.fill("#msgText", MSG); p5.wait_for_timeout(700)
+    cap1 = p5.inner_text("#capHq"); qcap = p5.inner_text("#qrCap")
+    check("ひとことがQRの説明に出る", MSG in qcap, qcap)
+    p5.click("#shareBtn"); p5.wait_for_timeout(300)
+    sh = p5.evaluate("window.__shared")
+    url = sh[0]["url"] if sh else ""
+    check("リンクで送るで共有メニューにリンクとひとことを渡す", bool(url) and "#" in url and MSG in sh[0]["text"], (url[:40] + "…") if url else str(sh))
+    p6 = ctx.new_page(); p6.on("pageerror", lambda e: errs.append(str(e)))
+    p6.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    p6.goto(URL + url[url.index("#"):])
+    p6.wait_for_selector("#linkCard:not([hidden])", timeout=15000)
+    frm = p6.inner_text("#linkFrom")
+    p6.click("#linkPlay"); p6.wait_for_timeout(1200)
+    st = p6.evaluate("(() => { const a = __koe.audio(); return a ? { paused: a.paused, t: a.currentTime } : null })()")
+    check("送ったリンクを開くと、ひとことが出て聞ける", MSG in frm and bool(st) and not st["paused"], f"{frm} {st}")
+    ctx.close()
+    # 共有メニューがない端末では、リンクをコピーする
+    ctx = b.new_context(viewport={"width": 400, "height": 860})
+    ctx.add_init_script("""delete Navigator.prototype.share; window.__copied = '';
+      Object.defineProperty(navigator, 'clipboard', { get: () => ({ writeText: async t => { window.__copied = t; } }) });""")
+    p7 = ctx.new_page(); p7.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    p7.goto(URL); p7.wait_for_selector("#outCard:not([hidden])", timeout=15000)
+    p7.click("#shareBtn"); p7.wait_for_timeout(300)
+    check("共有メニューがなければリンクをコピーする", "#" in p7.evaluate("window.__copied") and p7.is_visible("#shareMsg"))
+    p7.check("#rawFmt"); p7.wait_for_timeout(300)
+    check("最大の長さの形では「リンクで送る」を出さない", p7.is_hidden("#shareBtn"))
+    ctx.close()
+
     # iPhoneのホーム画面から開いたときの印刷（共有メニューにQRの画像を渡す）
     ctx = b.new_context(viewport={"width": 400, "height": 860},
         user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148")
