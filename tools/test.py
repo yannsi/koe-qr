@@ -7,6 +7,9 @@
   1. ページがエラーなく開き、声の圧縮部品（Codec2）が動く
   2. 声だけ・メロディだけ・両方 のQRを作って読み戻すと、中身が1バイトも違わない
   3. 写真（画像）からQRを読み、再生ボタンで音声が流れ始める
+  4. カメラで読める形（https://koe-qr.web.app/#…）でも 2 と同じように読み戻せ、
+     いちばん長い声を入れても型番40に収まる。古い形（先頭が VQ）も今までどおり収まる
+  5. そのアドレスで開くと「届いた声のQR」が出て、再生できる
 """
 import os, sys, math, base64
 from playwright.sync_api import sync_playwright
@@ -46,6 +49,44 @@ with sync_playwright() as pw:
       return out; }""", [pcm])
     for name, r in res.items():
         check(f"QR往復（{name}）", r["same"], f"型番{r['ver']}・{r['bytes']}バイト・声{r['voice']:.1f}秒・{r['notes']}音")
+
+    # カメラで読める形
+    res = page.evaluate("""([pcm]) => {
+      const k = __koe, out = {}, pre = k.CANON + '#', cap = k.capLink(k.CANON);
+      const mel = k.parseMelody(document.getElementById('melText').value);
+      const md = k.encodeMelody(mel.notes, 108, 2);
+      for (const [name, pc, m] of [['both', Int16Array.from(pcm), md], ['voice', Int16Array.from(pcm), null], ['melody', null, md]]) {
+        const pl = k.buildPayload(pc, 5, m, cap), qr = k.makeQR(pl.bytes, pre), raw = k.readQRFromCanvas(qr.canvas);
+        let text = ''; if (raw) for (const b of raw) text += String.fromCharCode(b);
+        let got = null; try { got = k.extractPayload(raw); } catch (e) {}
+        const same = !!got && got.length === pl.bytes.length && got.every((v, i) => v === pl.bytes[i]);
+        out[name] = { same, url: text.startsWith(pre), ver: qr.version, bytes: pl.bytes.length };
+      }
+      /* いちばん長い声（30秒を入れて、入るところまで）でも型番40に収まるか */
+      const long = new Int16Array(8000 * 40); for (let i = 0; i < long.length; i++) long[i] = Math.round(8000 * Math.sin(i / 8000 * 2 * Math.PI * (140 + (i % 4000) / 40)));
+      for (const [name, mode, c, pre2] of [['link-hq', 5, cap, pre], ['link-long', 8, cap, pre], ['raw-hq', 5, k.CAP, null], ['raw-long', 8, k.CAP, null]]) {
+        try { const pl = k.buildPayload(long, mode, null, c), qr = k.makeQR(pl.bytes, pre2);
+          let got = null; try { got = k.extractPayload(k.readQRFromCanvas(qr.canvas)); } catch (e) {}
+          const same = !!got && got.length === pl.bytes.length && got.every((v, i) => v === pl.bytes[i]);
+          out[name] = { ok: same, ver: qr.version, bytes: pl.bytes.length, sec: pl.voiceSec };
+        } catch (e) { out[name] = { ok: false, err: String(e) }; }
+      }
+      /* 43文字の書き方の往復（奇数の長さ・0と255を含む） */
+      let b43 = true;
+      for (const n of [0, 1, 2, 3, 7, 300, 301]) { const a = new Uint8Array(n); for (let i = 0; i < n; i++) a[i] = i % 3 === 0 ? 255 : (i * 37) % 256;
+        const r = k.fromB43(k.toB43(a)); b43 = b43 && r.length === n && r.every((v, i) => v === a[i]); }
+      out.b43 = b43;
+      return out; }""", [pcm])
+    for name in ("both", "voice", "melody"):
+        r = res[name]
+        check(f"カメラで読める形の往復（{name}）", r["same"] and r["url"], f"型番{r['ver']}・{r['bytes']}バイト")
+    for name in ("link-hq", "link-long", "raw-hq", "raw-long"):
+        r = res[name]
+        check(f"いちばん長い声が収まる（{name}）", r["ok"] and r.get("ver") == 40, str(r))
+    check("43文字の書き方で元に戻る", res["b43"])
+    hq_gap = res["raw-hq"].get("sec", 0) - res["link-hq"].get("sec", 0)
+    long_gap = res["raw-long"].get("sec", 0) - res["link-long"].get("sec", 0)
+    check("カメラで読める形で短くなるのは約1秒まで", 0 < hq_gap < 1.0 and 0 < long_gap < 1.3, f"音質優先 {hq_gap:.2f}秒・長さ優先 {long_gap:.2f}秒")
     d = page.evaluate("document.getElementById('qrImg').src")
     img = os.path.join(ROOT, ".test-qr.png"); open(img, "wb").write(base64.b64decode(d.split(",")[1]))
     page.click("#tabRead"); page.set_input_files("#photoFile", img)
@@ -54,6 +95,23 @@ with sync_playwright() as pw:
     st = page.evaluate("(() => { const a = __koe.audio(); return a ? { paused: a.paused, t: a.currentTime } : null })()")
     check("写真から読み取って再生できる", bool(st) and not st["paused"] and st["t"] > 0.3, str(st))
     os.remove(img)
+
+    # カメラで読んだときに開くアドレス（# の後ろに中身）で開く
+    code = page.evaluate("""([pcm]) => { const k = __koe;
+      const mel = k.parseMelody(document.getElementById('melText').value);
+      return k.toB43(k.buildPayload(Int16Array.from(pcm), 5, k.encodeMelody(mel.notes, 108, 2), k.capLink(k.CANON)).bytes); }""", [pcm])
+    p2 = b.new_page(viewport={"width": 400, "height": 860})
+    p2.on("pageerror", lambda e: errs.append(str(e)))
+    p2.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    p2.goto(URL + "#" + code)
+    p2.wait_for_selector("#linkCard:not([hidden])", timeout=15000)
+    txt = p2.inner_text("#linkText")
+    p2.click("#linkPlay"); p2.wait_for_timeout(1200)
+    st = p2.evaluate("(() => { const a = __koe.audio(); return a ? { paused: a.paused, t: a.currentTime } : null })()")
+    check("アドレスで開くと届いた声が出て再生できる", "秒の声" in txt and bool(st) and not st["paused"] and st["t"] > 0.3, f"{txt} {st}")
+    p2.goto(URL + "#ABC%"); p2.reload()
+    p2.wait_for_selector("#linkMsg:not([hidden])", timeout=15000)
+    check("壊れたアドレスでは読めないと知らせる", p2.is_hidden("#linkCard"))
     check("ページのエラーなし", not errs, "; ".join(errs))
     b.close()
 sys.exit(0 if ok else 1)

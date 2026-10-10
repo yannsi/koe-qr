@@ -81,6 +81,9 @@ kbd{font-family:inherit;background:var(--paper);border:1px solid var(--line);bor
 .qrbox img{width:100%;max-width:420px;image-rendering:pixelated;display:block;}
 .qrcap{font-size:13px;color:#1A2433;text-align:center;}
 .hint{font-size:13px;color:var(--muted);margin:0;}
+.opt{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--muted);cursor:pointer;}
+.opt input{width:22px;height:22px;flex:none;margin:2px 0 0;accent-color:var(--ai);}
+.opt b{color:var(--ink);}
 .cam{position:relative;border-radius:12px;overflow:hidden;background:#000;aspect-ratio:4/3;max-width:100%;}
 .cam video{width:100%;height:100%;object-fit:cover;display:block;}
 .cam .guide{position:absolute;inset:12%;border:3px dashed rgba(255,255,255,.85);border-radius:10px;pointer-events:none;}
@@ -102,7 +105,7 @@ footer a{color:var(--ai);}
 
 <div class="wrap">
   <header style="display:flex;flex-direction:column;gap:6px">
-    <h1>声のQR<small>試作版 0.3.1</small></h1>
+    <h1>声のQR<small>試作版 0.4.0</small></h1>
     <p class="lead">録音した声とメロディを、QRコードの中にそのまま入れます。読み取るときにネットはいりません。</p>
   </header>
 
@@ -111,6 +114,14 @@ footer a{color:var(--ai);}
     <p class="hint" id="installText" style="font-size:14px;color:var(--ink)"></p>
     <button class="btn primary" id="installBtn" type="button" hidden>ホーム画面に追加する</button>
   </div>
+
+  <div class="card" id="linkCard" hidden>
+    <p class="label"><b>届いた声のQR</b></p>
+    <p style="margin:0;font-size:18px" id="linkText"></p>
+    <button class="bigplay" id="linkPlay" type="button">▶ 再生する</button>
+    <p class="hint">音が出ないときは、マナーモード（消音）を解除して、音量を上げてください。あなたも下の「QRを作る」で、声のQRを作れます。</p>
+  </div>
+  <p class="msg warn" id="linkMsg" hidden></p>
 
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" id="tabMake" aria-selected="true" aria-controls="panelMake" type="button">QRを作る</button>
@@ -185,7 +196,8 @@ footer a{color:var(--ai);}
       </div>
       <button class="btn primary" id="previewBtn" type="button">QRの中身を聞いてみる</button>
       <div class="qrbox"><img id="qrImg" alt="声とメロディが入ったQRコード"><span class="qrcap" id="qrCap"></span></div>
-      <p class="hint">画像を長押しすると保存できます。型番が大きいほど升目が細かいので、印刷するときは<b>7〜8cm角以上</b>にしてください。スマホの標準カメラでは読めないので、このページの「QRを読んで聞く」で読み取ります。</p>
+      <p class="hint">画像を長押しすると保存できます。型番が大きいほど升目が細かいので、印刷するときは<b>7〜8cm角以上</b>にしてください。<span id="fmtHint"></span></p>
+      <label class="opt"><input type="checkbox" id="rawFmt"><span><b>最大の長さで作る</b><br>声が約1秒長く入りますが、スマホのカメラでは読めず、このページの「QRを読んで聞く」でだけ聞ける形になります。</span></label>
       <div class="row">
         <button class="btn" id="selfTestBtn" type="button">この場で読み取りテスト</button>
         <button class="btn" id="printBtn" type="button" hidden>印刷する</button>
@@ -236,7 +248,9 @@ footer a{color:var(--ai);}
 const STANDALONE = /*__STANDALONE__*/false;
 const SECURE = location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1";
 const WASM_B64 = "__WASM_B64__";
-const CAP = 2331;                       /* QR 型番40・誤り訂正M のバイト数 */
+const CAP = 2331;                       /* QR 型番40・誤り訂正M のバイト数（声のQR同士だけで読む形） */
+const QR_BITS = 2334*8;                 /* 型番40・誤り訂正M に入るビット数 */
+const CANON = "https://koe-qr.web.app/";
 const MODE_NAME = {5:"音質優先", 8:"長さ優先"};
 const INST_NAME = ["オルゴール","ピアノ","三線"];
 const $ = id => document.getElementById(id);
@@ -381,11 +395,11 @@ function sanshin(out, s0, f, len, sr){
 
 /* =============== 入れ物（ヘッダ＋区画） =============== */
 /* 'V' 'Q' 0x02 ／ 区画：種類(1) 長さ(2) 中身 ／ 種類1＝声、2＝メロディ */
-function buildPayload(pcm, modeId, melData){
+function buildPayload(pcm, modeId, melData, cap){
   const melSec = melData ? 3 + melData.length : 0;
   let voice = null;
   if (pcm){
-    const room = CAP - 3 - melSec - 3 - 3;
+    const room = (cap || CAP) - 3 - melSec - 3 - 3;
     if (room > 0) voice = encodeVoice(pcm, modeId, room);
     if (voice && voice.seconds === 0) voice = null;
   }
@@ -411,6 +425,49 @@ function parsePayload(bytes){
   } else res.voice = decodeVoice(bytes.subarray(2));   /* 試作版0.1の形式 */
   if (!res.voice && !res.melody) throw new Error("empty");
   return res;
+}
+
+/* =============== カメラで読める形（アドレス＋#＋中身） =============== */
+/* QRの中身を「https://koe-qr.web.app/#…」にすると、スマホの標準カメラで読んだとき声のQRのページが開く。
+   # の後ろはサーバーに送られない（端末の中だけで読む）。中身のバイト列は、QRの英数字モードの文字のうち
+   アドレスの中でそのまま使える43文字で書く（2バイト→3文字。空白と % は使わない）。 */
+const B43 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ$*+-./:";
+function toB43(bytes){
+  let s = "";
+  for (let i=0;i+1<bytes.length;i+=2){ let v = bytes[i]*256 + bytes[i+1]; s += B43[v%43]; v = Math.floor(v/43); s += B43[v%43] + B43[Math.floor(v/43)]; }
+  if (bytes.length % 2){ const v = bytes[bytes.length-1]; s += B43[v%43] + B43[Math.floor(v/43)]; }
+  return s;
+}
+function fromB43(s){
+  const n = s.length, r = n % 3; if (r === 1) throw new Error("b43");
+  const out = new Uint8Array(Math.floor(n/3)*2 + (r ? 1 : 0)); let o = 0;
+  const val = ch => { const k = B43.indexOf(ch); if (k < 0) throw new Error("b43"); return k; };
+  for (let i=0;i+2<n;i+=3){ const v = val(s[i]) + val(s[i+1])*43 + val(s[i+2])*1849; if (v > 65535) throw new Error("b43"); out[o++] = v>>8; out[o++] = v&255; }
+  if (r){ const v = val(s[n-2]) + val(s[n-1])*43; if (v > 255) throw new Error("b43"); out[o] = v; }
+  return out;
+}
+/* QRに書くアドレス。確認用アドレス・手元で開いたときは、そのアドレスで試せるようにする */
+function linkBase(){
+  const h = location.hostname;
+  if (/^koe-qr--[a-z0-9-]+\.web\.app$/.test(h) || h === "localhost" || h === "127.0.0.1") return location.origin + location.pathname.replace(/index\.html$/, "");
+  return CANON;
+}
+/* アドレスの形で入れられる中身の最大バイト数（前のアドレスはバイト、後ろは英数字で書く） */
+function capLink(prefix){
+  const head = 4 + 16 + 8*prefix.length + 4 + 13;
+  let n = CAP; while (n > 0){ const ch = 3*Math.floor(n/2) + 2*(n%2); if (head + 11*Math.floor(ch/2) + 6*(ch%2) <= QR_BITS) return n; n--; }
+  return 0;
+}
+/* 読み取ったQRの中身（バイト列）から、声のQRの中身を取り出す。古い形（先頭がVQ）もアドレスの形も読む */
+function extractPayload(bytes){
+  if (bytes.length >= 2 && bytes[0] === 0x56 && bytes[1] === 0x51) return bytes;
+  let t = ""; for (let i=0;i<bytes.length;i++) t += String.fromCharCode(bytes[i]);
+  return fromHash(t);
+}
+function fromHash(t){
+  const i = t.lastIndexOf("#"); if (i < 0) throw new Error("notours");
+  let code = t.slice(i+1); try { code = decodeURIComponent(code); } catch(e){}
+  return fromB43(code.trim().toUpperCase());
 }
 
 /* =============== 音の下ごしらえ =============== */
@@ -499,9 +556,11 @@ function playContent(content, btn){
 }
 
 /* =============== QR =============== */
-function makeQR(bytes){
-  const qr = qrcode(0, "M"); let s = ""; for (let i=0;i<bytes.length;i++) s += String.fromCharCode(bytes[i]);
-  qr.addData(s, "Byte"); qr.make();
+function makeQR(bytes, prefix){
+  const qr = qrcode(0, "M");
+  if (prefix){ qr.addData(prefix, "Byte"); qr.addData(toB43(bytes), "Alphanumeric"); }
+  else { let s = ""; for (let i=0;i<bytes.length;i++) s += String.fromCharCode(bytes[i]); qr.addData(s, "Byte"); }
+  qr.make();
   const n = qr.getModuleCount(), cell = 4, m = 4, size = (n + m*2)*cell;
   const cv = document.createElement("canvas"); cv.width = size; cv.height = size;
   const g = cv.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0,0,size,size); g.fillStyle = "#000";
@@ -552,8 +611,10 @@ const SAMPLES = {
   ryukyu: { text:"ド ミ ファ ソー シ ↑ドー\nシ ソ ファ ミー ファ_ ソ_ ミ ドー ・\nミ ソ シ ↑ドー ↑ミ_ ↑レ_ ↑ドー\nシ ソ ファ ミ ドーー", inst:2, tempo:96 }
 };
 let lastPCM = null, lastPayload = null, lastQR = null, maxSec = 15, melState = { notes:[], data:null };
+const useLink = () => !$("rawFmt").checked;
+const capNow = () => useLink() ? capLink(linkBase()) : CAP;
 function maxVoiceSeconds(id){ const m = modeInfo(id); const melSec = melState.data ? 3 + melState.data.length : 0;
-  return Math.max(0, Math.floor((CAP-3-melSec-6)*8/m.nb)) * m.spf / 8000; }
+  return Math.max(0, Math.floor((capNow()-3-melSec-6)*8/m.nb)) * m.spf / 8000; }
 function refreshCaps(){
   const saveMel = melState; $("capHq").textContent = "最大 " + Math.floor(maxVoiceSeconds(5)) + "秒"; $("capLong").textContent = "最大 " + Math.floor(maxVoiceSeconds(8)) + "秒"; melState = saveMel;
   maxSec = maxVoiceSeconds(curMode());
@@ -573,13 +634,17 @@ function rebuild(){
   if (!C2) return;
   readMelodyInput(); refreshCaps();
   if (!lastPCM && !melState.data){ $("outCard").hidden = true; lastPayload = null; return; }
-  const p = buildPayload(lastPCM, curMode(), melState.data);
+  const p = buildPayload(lastPCM, curMode(), melState.data, capNow());
   lastPayload = p.bytes;
-  const qr = makeQR(p.bytes); lastQR = qr;
+  const link = useLink(), base = linkBase();
+  const qr = makeQR(p.bytes, link ? base + "#" : null); lastQR = qr;
   const url = qr.canvas.toDataURL("image/png"); $("qrImg").src = url; $("printImg").src = url;
   const parts = []; if (p.voiceSec) parts.push("声 " + fmtSec(p.voiceSec) + "秒"); if (melState.data) parts.push("メロディ " + melState.notes.length + "音（" + INST_NAME[curInst()] + "）");
   $("qrCap").textContent = "声のQR ・ " + parts.join(" ＋ ");
-  $("printCap").textContent = "声のQR（" + parts.join(" ＋ ") + "）　読み取りは「声のQR」ページで";
+  $("printCap").textContent = "声のQR（" + parts.join(" ＋ ") + "）　" + (link ? "スマホのカメラで読み取ると聞けます" : "読み取りは「声のQR」ページで");
+  $("fmtHint").textContent = link
+    ? "スマホのカメラで読むと声のQRのページが開いて、そのまま聞けます（初めて開くスマホでは、ページを読み込むのにネットが要ります）。" + (base !== CANON && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? "いまは確認用のアドレスで開いているので、このQRは7日ほどで開けなくなります。" : "")
+    : "スマホの標準カメラでは読めないので、このページの「QRを読んで聞く」で読み取ります。";
   $("stSec").textContent = fmtSec(p.voiceSec); $("stNotes").textContent = melState.notes.length;
   $("stBytes").textContent = p.bytes.length.toLocaleString("ja-JP"); $("stVer").textContent = qr.version;
   $("outCard").hidden = false; show($("testMsg"), "", "");
@@ -590,7 +655,7 @@ function rebuild(){
 let melTimer = 0;
 $("melText").addEventListener("input", () => { clearTimeout(melTimer); melTimer = setTimeout(rebuild, 350); });
 $("tempo").addEventListener("input", () => { clearTimeout(melTimer); melTimer = setTimeout(rebuild, 200); $("tempoOut").textContent = "♩＝" + $("tempo").value; });
-document.querySelectorAll('input[name="inst"],input[name="mode"]').forEach(r => r.addEventListener("change", rebuild));
+document.querySelectorAll('input[name="inst"],input[name="mode"],#rawFmt').forEach(r => r.addEventListener("change", rebuild));
 document.querySelectorAll("[data-sample]").forEach(b => b.addEventListener("click", () => {
   const s = SAMPLES[b.dataset.sample]; $("melText").value = s.text; $("tempo").value = s.tempo;
   document.getElementById("inst" + s.inst).checked = true; rebuild();
@@ -638,9 +703,10 @@ $("recBtn").addEventListener("click", () => { if (!C2) return; rec ? stopRec() :
 $("previewBtn").addEventListener("click", () => { if (lastPayload) playContent(parsePayload(lastPayload), $("previewBtn")); });
 $("selfTestBtn").addEventListener("click", () => {
   if (!lastQR) return;
-  const got = readQRFromCanvas(lastQR.canvas);
-  if (!got){ show($("testMsg"), "warn", "読み取りに失敗しました。"); return; }
-  const same = got.length === lastPayload.length && got.every((v,i) => v === lastPayload[i]);
+  const raw = readQRFromCanvas(lastQR.canvas);
+  if (!raw){ show($("testMsg"), "warn", "読み取りに失敗しました。"); return; }
+  let got = null; try { got = extractPayload(raw); } catch(e){}
+  const same = !!got && got.length === lastPayload.length && got.every((v,i) => v === lastPayload[i]);
   if (!same){ show($("testMsg"), "warn", "読み取れましたが、中身が一致しませんでした。"); return; }
   const c = parsePayload(got);
   show($("testMsg"), "ok", "QRを読み取り、中身を取り出せました（" + describe(c) + "）。再生します。");
@@ -653,7 +719,7 @@ function describe(c){ const p = []; if (c.voice) p.push(fmtSec(c.voice.seconds) 
 let lastRead = null, camStream = null, scanning = false;
 const scanCv = document.createElement("canvas");
 function onRead(bytes){
-  try { const c = parsePayload(bytes); lastRead = c;
+  try { const c = parsePayload(extractPayload(bytes)); lastRead = c;
     $("rdText").textContent = describe(c) + " が入っていました。";
     $("resultCard").hidden = false; show($("readMsg"), "ok", "読み取れました。「再生する」を押してください。"); $("playBtn").focus(); }
   catch(e){ show($("readMsg"), "warn", "QRコードは読めましたが、声のQRではありませんでした。"); }
@@ -703,9 +769,23 @@ $("photoFile").addEventListener("change", e => {
 });
 $("playBtn").addEventListener("click", () => { if (lastRead) playContent(lastRead, $("playBtn")); });
 
+/* =============== 画面：カメラで読んで開いたとき（アドレスの # の後ろ） =============== */
+let linkRead = null;
+function openFromLink(){
+  if (location.hash.length <= 1 || !C2) return;
+  stopAll();
+  try { linkRead = parsePayload(fromHash(location.hash));
+    $("linkText").textContent = describe(linkRead) + " が入っています。";
+    $("linkCard").hidden = false; show($("linkMsg"), "", "");
+    $("linkPlay").focus(); }
+  catch(e){ linkRead = null; $("linkCard").hidden = true; show($("linkMsg"), "warn", "このアドレスに入っていた声のQRを読み取れませんでした。QRコードが欠けていないか、もう一度読み取ってみてください。"); }
+}
+$("linkPlay").addEventListener("click", () => { if (linkRead) playContent(linkRead, $("linkPlay")); });
+window.addEventListener("hashchange", openFromLink);
+
 /* =============== 起動 =============== */
 $("melText").value = SAMPLES.kkk.text; $("tempo").value = SAMPLES.kkk.tempo; $("tempoOut").textContent = "♩＝" + SAMPLES.kkk.tempo;
-initCodec().then(() => { rebuild(); show($("melMsg"), "info", "見本として「きらきら星」を工工四で入れてあります。書きかえて使ってください。"); }).catch(() => {
+initCodec().then(() => { rebuild(); show($("melMsg"), "info", "見本として「きらきら星」を工工四で入れてあります。書きかえて使ってください。"); openFromLink(); }).catch(() => {
   show($("codecMsg"), "warn", "この画面では声の圧縮部品を動かせませんでした。ダウンロードしたファイル版を、ブラウザで開いて使ってください。");
   ["recBtn","camBtn"].forEach(id => $(id).disabled = true);
 });
@@ -725,6 +805,7 @@ if (STANDALONE){
   if ("serviceWorker" in navigator && SECURE)
     navigator.serviceWorker.ready.then(() => { $("offlineStatus").textContent = "この端末には保存済みです。ネットがなくても開けます。"; }).catch(() => {});
 }
-window.__koe = { mixToFloat, wavBlob, audio: () => audioEl, buildPayload, parsePayload, parseMelody, encodeMelody, renderMelody, makeQR, readQRFromCanvas, ready: () => !!C2 };
+window.__koe = { mixToFloat, wavBlob, audio: () => audioEl, buildPayload, parsePayload, parseMelody, encodeMelody, renderMelody, makeQR, readQRFromCanvas,
+  toB43, fromB43, extractPayload, capLink, linkBase, CAP, CANON, ready: () => !!C2 };
 })();
 </script>
