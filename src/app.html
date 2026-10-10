@@ -91,6 +91,8 @@ kbd{font-family:inherit;background:var(--paper);border:1px solid var(--line);bor
 .cam{position:relative;border-radius:12px;overflow:hidden;background:#000;aspect-ratio:4/3;max-width:100%;}
 .cam video{width:100%;height:100%;object-fit:cover;display:block;}
 .cam .guide{position:absolute;inset:12%;border:3px dashed rgba(255,255,255,.85);border-radius:10px;pointer-events:none;}
+.zoom{display:flex;align-items:center;gap:12px;}
+.zoom input{flex:1;accent-color:var(--ai);min-width:0;}
 .cam .scanmsg{position:absolute;left:0;right:0;bottom:10px;text-align:center;color:#fff;font-size:14px;text-shadow:0 1px 3px #000;}
 .bigplay{font:inherit;font-weight:700;font-size:20px;border:0;border-radius:16px;background:var(--ok);color:var(--paper);min-height:72px;cursor:pointer;}
 footer{font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:4px;}
@@ -109,7 +111,7 @@ footer a{color:var(--ai);}
 
 <div class="wrap">
   <header style="display:flex;flex-direction:column;gap:6px">
-    <h1>声のQR<small>試作版 0.5.0</small></h1>
+    <h1>声のQR<small>試作版 0.5.1</small></h1>
     <p class="lead">録音した声とメロディを、QRコードの中にそのまま入れます。読み取るときにネットはいりません。</p>
   </header>
 
@@ -230,13 +232,15 @@ footer a{color:var(--ai);}
         <label class="btn" for="photoFile">写真から読み取る</label>
       </div>
       <input class="file" type="file" id="photoFile" accept="image/*">
+      <p class="msg info" style="margin:0">いつもの作り方のQRは、<b>スマホのいつものカメラ</b>で読むのがいちばん確実です。出てきたリンクを押すと、このページで聞けます。</p>
       <div class="cam" id="camBox" hidden>
         <video id="video" playsinline muted></video>
         <div class="guide"></div>
-        <div class="scanmsg">QRコードを枠の中に大きく写してください</div>
+        <div class="scanmsg" id="scanMsg">QRコードを枠の中に大きく写してください</div>
       </div>
+      <div class="zoom" id="zoomRow" hidden><span class="label">ズーム</span><input type="range" id="zoom" aria-label="ズーム"><button class="btn small" id="torchBtn" type="button" hidden>ライト</button></div>
       <button class="btn" id="camStop" type="button" hidden>カメラを止める</button>
-      <p class="hint">升目が細かいので、QRが画面いっぱいに写るくらい近づけて、ピントが合うまで待ってください。うまくいかないときは「写真から読み取る」が確実です。</p>
+      <p class="hint">近づけすぎるとピントが合いません。QRから20〜30cmほど離して、ズームで大きくすると読みやすくなります。うまくいかないときは「写真から読み取る」が確実です。</p>
       <p class="msg" id="readMsg" hidden></p>
     </div>
     <div class="card" id="resultCard" hidden>
@@ -797,15 +801,62 @@ function onRead(bytes){
     $("resultCard").hidden = false; show($("readMsg"), "ok", "読み取れました。「再生する」を押してください。"); $("playBtn").focus(); }
   catch(e){ show($("readMsg"), "warn", "QRコードは読めましたが、声のQRではありませんでした。"); }
 }
+/* カメラの映像から読む。
+   ・端末に読み取り部品（BarcodeDetector、Androidなど）があれば、それも使う（速くて強い）
+   ・jsQR は升目1つが4画素くらいないと読めないので、そのまま／1.5倍に拡大／真ん中を2倍に拡大 を順に試す
+     （試験で、縮める・切り出すだけは読める数が減り、拡大すると増えた） */
+let detector = null, scanTurn = 0, detBusy = false;
+async function initDetector(){
+  detector = null;
+  try { if ("BarcodeDetector" in window){ const f = await BarcodeDetector.getSupportedFormats(); if (f.includes("qr_code")) detector = new BarcodeDetector({ formats:["qr_code"] }); } } catch(e){}
+}
+function textBytes(t){ const b = new Uint8Array(t.length); for (let i=0;i<t.length;i++) b[i] = t.charCodeAt(i) & 255; return b; }
+function gotScan(bytes){
+  try { extractPayload(bytes); } catch(e){ return false; }   /* 声のQRでなければ読み続ける */
+  stopCam(); onRead(bytes); return true;
+}
+function scanFrame(v){
+  const w = v.videoWidth, h = v.videoHeight, turn = scanTurn++ % 3;
+  let sx = 0, sy = 0, cw = w, ch = h, s = 1;
+  if (turn === 1) s = 1.5;
+  else if (turn === 2){ cw = Math.round(Math.min(w, h*4/3)*0.92); ch = Math.round(h*0.92); sx = Math.round((w-cw)/2); sy = Math.round((h-ch)/2); s = 2; }
+  scanCv.width = Math.round(cw*s); scanCv.height = Math.round(ch*s);
+  const g = scanCv.getContext("2d", { willReadFrequently:true }); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+  g.drawImage(v, sx, sy, cw, ch, 0, 0, scanCv.width, scanCv.height);
+  const r = jsQR(g.getImageData(0,0,scanCv.width,scanCv.height).data, scanCv.width, scanCv.height, { inversionAttempts:"dontInvert" });
+  return r && r.binaryData ? new Uint8Array(r.binaryData) : null;
+}
 function scanLoop(){
   if (!scanning) return;
   const v = $("video");
   if (v.readyState >= 2 && v.videoWidth){
-    scanCv.width = v.videoWidth; scanCv.height = v.videoHeight;
-    scanCv.getContext("2d", { willReadFrequently:true }).drawImage(v, 0, 0);
-    const got = readQRFromCanvas(scanCv); if (got){ stopCam(); onRead(got); return; }
+    if (detector && !detBusy){
+      detBusy = true;
+      detector.detect(v).then(codes => { detBusy = false; if (scanning) for (const c of codes) if (c.rawValue && gotScan(textBytes(c.rawValue))) return; })
+        .catch(() => { detBusy = false; });
+    }
+    const got = scanFrame(v); if (got && gotScan(got)) return;
   }
-  setTimeout(scanLoop, 180);
+  setTimeout(scanLoop, 120);
+}
+/* ピントを合わせ続ける・ズーム・ライト（端末が対応しているときだけ） */
+function setupTrack(){
+  $("zoomRow").hidden = true; $("torchBtn").hidden = true;
+  const t = camStream && camStream.getVideoTracks()[0]; if (!t || !t.getCapabilities) return;
+  let caps = {}; try { caps = t.getCapabilities(); } catch(e){ return; }
+  const adv = {};
+  if (Array.isArray(caps.focusMode) && caps.focusMode.includes("continuous")) adv.focusMode = "continuous";
+  if (Object.keys(adv).length) t.applyConstraints({ advanced:[adv] }).catch(() => {});
+  if (caps.zoom && caps.zoom.max > caps.zoom.min){
+    const z = $("zoom"); z.min = caps.zoom.min; z.max = Math.min(caps.zoom.max, caps.zoom.min*8); z.step = caps.zoom.step || 0.1;
+    let cur = caps.zoom.min; try { cur = t.getSettings().zoom || cur; } catch(e){}
+    z.value = cur; z.oninput = () => t.applyConstraints({ advanced:[{ zoom:Number(z.value) }] }).catch(() => {});
+    $("zoomRow").hidden = false;
+  }
+  if (caps.torch){
+    let on = false; $("torchBtn").hidden = false; $("zoomRow").hidden = false; $("torchBtn").textContent = "ライト";
+    $("torchBtn").onclick = () => { on = !on; t.applyConstraints({ advanced:[{ torch:on }] }).catch(() => {}); $("torchBtn").textContent = on ? "ライトを消す" : "ライト"; };
+  }
 }
 async function startCam(){
   show($("readMsg"), "", "");
@@ -818,9 +869,10 @@ async function startCam(){
   }
   const v = $("video"); v.srcObject = camStream; $("camBox").hidden = false; $("camStop").hidden = false;
   try { await v.play(); } catch(e){}
+  setupTrack(); await initDetector();
   scanning = true; scanLoop();
 }
-function stopCam(){ scanning = false; if (camStream){ camStream.getTracks().forEach(t => t.stop()); camStream = null; } $("camBox").hidden = true; $("camStop").hidden = true; }
+function stopCam(){ scanning = false; if (camStream){ camStream.getTracks().forEach(t => t.stop()); camStream = null; } $("camBox").hidden = true; $("camStop").hidden = true; $("zoomRow").hidden = true; }
 $("camBtn").addEventListener("click", () => { if (C2) startCam(); });
 $("camStop").addEventListener("click", stopCam);
 $("photoFile").addEventListener("change", e => {

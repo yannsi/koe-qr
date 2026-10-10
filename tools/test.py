@@ -11,6 +11,7 @@
      いちばん長い声を入れても型番40に収まる。古い形（先頭が VQ）も今までどおり収まる
   5. そのアドレスで開くと「届いた声のQR」が出て、再生できる
   6. ひとこと（種類3）が往復し、届いた画面に出る。「リンクで送る」で送ったリンクを開くと聞ける
+  7. 「カメラで読み取る」で、カメラの映像（試験用のにせのカメラに、少しぼかした細かいQRを映す）から読み取れる
 """
 import os, sys, math, base64
 from playwright.sync_api import sync_playwright
@@ -173,6 +174,40 @@ with sync_playwright() as pw:
     p4.goto(URL); p4.wait_for_selector("#outCard:not([hidden])", timeout=15000)
     p4.click("#printBtn"); p4.wait_for_timeout(200)
     check("ほかの端末では印刷ボタンでそのまま印刷する", p4.evaluate("!!window.__printed"))
+    # にせのカメラの映像を作る（10秒の声が入った細かいQRを、1280×720 の灰色の背景の真ん中に、少しぼかして置く）
+    gray = page.evaluate("""([pcm]) => { const k = __koe; const long = new Int16Array(8000*10);
+      for (let i = 0; i < long.length; i++) long[i] = pcm[i % pcm.length];
+      const pl = k.buildPayload(long, 5, null, k.capLink(k.CANON)), qr = k.makeQR(pl.bytes, k.CANON + '#');
+      const c = qr.canvas, d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data, g = [];
+      for (let i = 0; i < d.length; i += 4) g.push(d[i]); return { w: c.width, h: c.height, g, ver: qr.version }; }""", [pcm])
+    W, H = 1280, 720
+    frame = bytearray([150]) * (W * H)
+    qw, qh, g = gray["w"], gray["h"], gray["g"]
+    ox, oy = (W - qw) // 2, (H - qh) // 2
+    for y in range(qh):
+        for x in range(qw):
+            if 0 < x < qw - 1 and 0 < y < qh - 1:
+                v = (g[y*qw+x]*4 + g[y*qw+x-1] + g[y*qw+x+1] + g[(y-1)*qw+x] + g[(y+1)*qw+x]) // 8
+            else:
+                v = g[y*qw+x]
+            frame[(oy+y)*W + ox+x] = 30 + v * 190 // 255
+    y4m = os.path.join(ROOT, ".test-cam.y4m")
+    with open(y4m, "wb") as f:
+        f.write(f"YUV4MPEG2 W{W} H{H} F10:1 Ip A1:1 C420jpeg\n".encode())
+        chroma = bytes([128]) * (W * H // 2)
+        for _ in range(3):
+            f.write(b"FRAME\n"); f.write(frame); f.write(chroma)
+    bc = pw.chromium.launch(args=["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", f"--use-file-for-fake-video-capture={y4m}"])
+    pc = bc.new_page(viewport={"width": 400, "height": 860}); pc.on("pageerror", lambda e: errs.append(str(e)))
+    pc.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    pc.goto(URL); pc.wait_for_function("window.__koe && __koe.ready()", timeout=15000)
+    pc.click("#tabRead"); pc.click("#camBtn")
+    try:
+        pc.wait_for_selector("#resultCard:not([hidden])", timeout=20000); txt = pc.inner_text("#rdText")
+    except Exception:
+        txt = pc.inner_text("#readMsg")
+    check("カメラの映像から細かいQRを読み取れる", "秒の声" in txt and pc.is_hidden("#camBox"), f"型番{gray['ver']} {txt}")
+    bc.close(); os.remove(y4m)
     check("ページのエラーなし", not errs, "; ".join(errs))
     b.close()
 sys.exit(0 if ok else 1)
