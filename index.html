@@ -53,7 +53,8 @@ h1 small{font-size:13px;color:var(--muted);font-weight:400;margin-left:8px;lette
 .choice label{display:flex;flex-direction:column;gap:2px;border:2px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer;min-height:56px;justify-content:center;}
 .choice label b{font-size:16px;}
 .choice label span{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums;}
-.choice input:checked + label{border-color:var(--ai);background:var(--ai-soft);}
+.choice input:checked + label{border-color:var(--ai);border-width:3px;padding:9px 11px;background:var(--ai-soft);}
+.choice input:checked + label b::before{content:"✓ ";color:var(--ai);}
 .choice input:focus-visible + label{outline:3px solid var(--ai);outline-offset:2px;}
 .recrow{display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
 .recbtn{width:84px;height:84px;border-radius:50%;border:0;background:var(--rec);color:#fff;font:inherit;font-weight:700;font-size:15px;cursor:pointer;display:grid;place-items:center;flex:none;box-shadow:0 4px 14px rgba(201,64,64,.3);}
@@ -73,6 +74,8 @@ button:focus-visible,.btn:focus-visible,textarea:focus-visible,input[type=range]
 .row{display:flex;flex-wrap:wrap;gap:10px;}
 .row > *{flex:1 1 180px;}
 .samples{display:flex;flex-wrap:wrap;gap:8px;}
+.samples .btn[aria-pressed="true"]{background:var(--ai);color:var(--on-ai);border-color:var(--ai);}
+.samples .btn[aria-pressed="true"]::before{content:"✓";}
 .file{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;}
 textarea{font:inherit;font-size:18px;line-height:1.8;width:100%;min-height:130px;resize:vertical;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--paper);color:var(--ink);}
 .tempo{display:flex;align-items:center;gap:12px;}
@@ -127,7 +130,7 @@ footer a{color:var(--ai);}
 
 <div class="wrap">
   <header style="display:flex;flex-direction:column;gap:6px">
-    <h1>声のQR<small>試作版 0.5.1</small></h1>
+    <h1>声のQR<small>試作版 0.5.2</small></h1>
     <p class="lead">録音した声とメロディを、QRコードの中にそのまま入れます。読み取るときにネットはいりません。</p>
   </header>
 
@@ -181,9 +184,9 @@ footer a{color:var(--ai);}
     <div class="card">
       <p class="label"><b>メロディ</b>ドレミか工工四で書きます</p>
       <div class="samples">
-        <button class="btn small" type="button" data-sample="kkk">きらきら星（工工四）</button>
-        <button class="btn small" type="button" data-sample="doremi">きらきら星（ドレミ）</button>
-        <button class="btn small" type="button" data-sample="ryukyu">琉球音階のフレーズ</button>
+        <button class="btn small" type="button" data-sample="kkk" aria-pressed="false">きらきら星（工工四）</button>
+        <button class="btn small" type="button" data-sample="doremi" aria-pressed="false">きらきら星（ドレミ）</button>
+        <button class="btn small" type="button" data-sample="ryukyu" aria-pressed="false">琉球音階のフレーズ</button>
         <button class="btn small" type="button" id="melClear">消す</button>
       </div>
       <textarea id="melText" spellcheck="false" aria-label="メロディの楽譜"></textarea>
@@ -13101,11 +13104,17 @@ $("melText").addEventListener("input", () => { clearTimeout(melTimer); melTimer 
 $("msgText").addEventListener("input", () => { clearTimeout(melTimer); melTimer = setTimeout(rebuild, 350); });
 $("tempo").addEventListener("input", () => { clearTimeout(melTimer); melTimer = setTimeout(rebuild, 200); $("tempoOut").textContent = "♩＝" + $("tempo").value; });
 document.querySelectorAll('input[name="inst"],input[name="mode"],#rawFmt').forEach(r => r.addEventListener("change", rebuild));
+/* 選んだ見本のボタンに印を付ける。楽譜を書きかえたら外す */
+function markSample(){
+  const t = $("melText").value;
+  document.querySelectorAll("[data-sample]").forEach(b => b.setAttribute("aria-pressed", SAMPLES[b.dataset.sample].text === t ? "true" : "false"));
+}
 document.querySelectorAll("[data-sample]").forEach(b => b.addEventListener("click", () => {
   const s = SAMPLES[b.dataset.sample]; $("melText").value = s.text; $("tempo").value = s.tempo;
-  document.getElementById("inst" + s.inst).checked = true; rebuild();
+  document.getElementById("inst" + s.inst).checked = true; markSample(); rebuild();
 }));
-$("melClear").addEventListener("click", () => { $("melText").value = ""; rebuild(); $("melText").focus(); });
+$("melText").addEventListener("input", markSample);
+$("melClear").addEventListener("click", () => { $("melText").value = ""; markSample(); rebuild(); $("melText").focus(); });
 $("melPlay").addEventListener("click", () => { readMelodyInput(); if (!melState.data) return; playContent({ melody: decodeMelody(melState.data) }, $("melPlay")); });
 
 async function handleAudio(arrayBuf){
@@ -13326,7 +13335,7 @@ $("linkPlay").addEventListener("click", () => { if (linkRead) playContent(linkRe
 window.addEventListener("hashchange", openFromLink);
 
 /* =============== 起動 =============== */
-$("melText").value = SAMPLES.kkk.text; $("tempo").value = SAMPLES.kkk.tempo; $("tempoOut").textContent = "♩＝" + SAMPLES.kkk.tempo;
+$("melText").value = SAMPLES.kkk.text; $("tempo").value = SAMPLES.kkk.tempo; $("tempoOut").textContent = "♩＝" + SAMPLES.kkk.tempo; markSample();
 initCodec().then(() => { rebuild(); show($("melMsg"), "info", "見本として「きらきら星」を工工四で入れてあります。書きかえて使ってください。"); openFromLink(); }).catch(() => {
   show($("codecMsg"), "warn", "この画面では声の圧縮部品を動かせませんでした。ダウンロードしたファイル版を、ブラウザで開いて使ってください。");
   ["recBtn","camBtn"].forEach(id => $(id).disabled = true);

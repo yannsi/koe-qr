@@ -174,6 +174,17 @@ with sync_playwright() as pw:
     p4.goto(URL); p4.wait_for_selector("#outCard:not([hidden])", timeout=15000)
     p4.click("#printBtn"); p4.wait_for_timeout(200)
     check("ほかの端末では印刷ボタンでそのまま印刷する", p4.evaluate("!!window.__printed"))
+    # メロディの見本ボタン：押したものに印が付き、書きかえると外れる
+    p8 = b.new_page(viewport={"width": 400, "height": 860}); p8.on("pageerror", lambda e: errs.append(str(e)))
+    p8.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    p8.goto(URL); p8.wait_for_function("window.__koe && __koe.ready()", timeout=15000)
+    pressed = lambda: p8.evaluate("[...document.querySelectorAll('[data-sample]')].map(b => b.getAttribute('aria-pressed'))")
+    first = pressed()
+    p8.click("[data-sample=ryukyu]"); after = pressed()
+    p8.fill("#melText", "ド レ ミ"); p8.dispatch_event("#melText", "input"); edited = pressed()
+    check("押したメロディの見本に印が付き、書きかえると外れる",
+          first == ["true", "false", "false"] and after == ["false", "false", "true"] and edited == ["false", "false", "false"], f"{first} {after} {edited}")
+
     # にせのカメラの映像を作る（10秒の声が入った細かいQRを、1280×720 の灰色の背景の真ん中に、少しぼかして置く）
     gray = page.evaluate("""([pcm]) => { const k = __koe; const long = new Int16Array(8000*10);
       for (let i = 0; i < long.length; i++) long[i] = pcm[i % pcm.length];
