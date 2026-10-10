@@ -112,6 +112,26 @@ with sync_playwright() as pw:
     p2.goto(URL + "#ABC%"); p2.reload()
     p2.wait_for_selector("#linkMsg:not([hidden])", timeout=15000)
     check("壊れたアドレスでは読めないと知らせる", p2.is_hidden("#linkCard"))
+    # iPhoneのホーム画面から開いたときの印刷（共有メニューにQRの画像を渡す）
+    ctx = b.new_context(viewport={"width": 400, "height": 860},
+        user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148")
+    ctx.add_init_script("""Object.defineProperty(navigator, 'standalone', { get: () => true });
+      window.__shared = []; navigator.canShare = d => !!(d && d.files && d.files.length);
+      navigator.share = async d => { window.__shared.push(d.files.map(f => ({ name: f.name, type: f.type, size: f.size }))); };
+      window.print = () => { window.__printed = true; };""")
+    p3 = ctx.new_page(); p3.on("pageerror", lambda e: errs.append(str(e)))
+    p3.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    p3.goto(URL); p3.wait_for_selector("#outCard:not([hidden])", timeout=15000); p3.wait_for_timeout(500)
+    p3.click("#printBtn"); p3.wait_for_timeout(300)
+    sh = p3.evaluate("({ shared: window.__shared, printed: !!window.__printed })")
+    ok_share = bool(sh["shared"]) and sh["shared"][0][0]["type"] == "image/png" and sh["shared"][0][0]["size"] > 1000 and not sh["printed"]
+    check("iPhoneのホーム画面では印刷ボタンで共有メニューにQRの画像を渡す", ok_share, str(sh))
+    ctx.close()
+    p4 = b.new_page(); p4.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    p4.add_init_script("window.print = () => { window.__printed = true; };")
+    p4.goto(URL); p4.wait_for_selector("#outCard:not([hidden])", timeout=15000)
+    p4.click("#printBtn"); p4.wait_for_timeout(200)
+    check("ほかの端末では印刷ボタンでそのまま印刷する", p4.evaluate("!!window.__printed"))
     check("ページのエラーなし", not errs, "; ".join(errs))
     b.close()
 sys.exit(0 if ok else 1)

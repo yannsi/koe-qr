@@ -121,7 +121,7 @@ footer a{color:var(--ai);}
 
 <div class="wrap">
   <header style="display:flex;flex-direction:column;gap:6px">
-    <h1>声のQR<small>試作版 0.4.0</small></h1>
+    <h1>声のQR<small>試作版 0.4.1</small></h1>
     <p class="lead">録音した声とメロディを、QRコードの中にそのまま入れます。読み取るときにネットはいりません。</p>
   </header>
 
@@ -13058,6 +13058,7 @@ function rebuild(){
   const parts = []; if (p.voiceSec) parts.push("声 " + fmtSec(p.voiceSec) + "秒"); if (melState.data) parts.push("メロディ " + melState.notes.length + "音（" + INST_NAME[curInst()] + "）");
   $("qrCap").textContent = "声のQR ・ " + parts.join(" ＋ ");
   $("printCap").textContent = "声のQR（" + parts.join(" ＋ ") + "）　" + (link ? "スマホのカメラで読み取ると聞けます" : "読み取りは「声のQR」ページで");
+  makeShareFile(qr.canvas, $("printCap").textContent);
   $("fmtHint").textContent = link
     ? "スマホのカメラで読むと声のQRのページが開いて、そのまま聞けます（初めて開くスマホでは、ページを読み込むのにネットが要ります）。" + (base !== CANON && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? "いまは確認用のアドレスで開いているので、このQRは7日ほどで開けなくなります。" : "")
     : "スマホの標準カメラでは読めないので、このページの「QRを読んで聞く」で読み取ります。";
@@ -13128,7 +13129,37 @@ $("selfTestBtn").addEventListener("click", () => {
   show($("testMsg"), "ok", "QRを読み取り、中身を取り出せました（" + describe(c) + "）。再生します。");
   playContent(c, $("selfTestBtn"));
 });
-if (STANDALONE){ $("printBtn").hidden = false; $("printBtn").addEventListener("click", () => window.print()); }
+/* 印刷：iPhoneのホーム画面から開いたときは window.print() が効かないので、
+   QRと説明を1枚の画像にして「共有」メニューに渡し、そこから「プリント」を選んでもらう */
+const IS_APP = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+let shareFile = null, shareSeq = 0;
+function makeShareFile(qrCanvas, caption){
+  const seq = ++shareSeq; shareFile = null;
+  /* 印刷で升目がぼやけないよう、QRを整数倍に拡大して1,200px前後にする */
+  const k = Math.max(1, Math.ceil(1200/qrCanvas.width)), w = qrCanvas.width*k, pad = Math.round(w*0.04), fs = Math.round(w*0.03);
+  const g0 = document.createElement("canvas").getContext("2d"); g0.font = fs + "px " + getComputedStyle(document.body).fontFamily;
+  const lines = []; let line = "";
+  for (const ch of caption){ if (g0.measureText(line + ch).width > w - pad*2 && line){ lines.push(line); line = ch; } else line += ch; }
+  if (line) lines.push(line);
+  const cv = document.createElement("canvas"); cv.width = w + pad*2; cv.height = w + pad*2 + lines.length*fs*1.5 + pad;
+  const g = cv.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0,0,cv.width,cv.height);
+  g.imageSmoothingEnabled = false; g.drawImage(qrCanvas, pad, pad, w, w);
+  g.fillStyle = "#1A2433"; g.font = g0.font; g.textBaseline = "top";
+  lines.forEach((t,i) => g.fillText(t, pad, w + pad*1.5 + i*fs*1.5));
+  cv.toBlob(b => { if (b && seq === shareSeq) shareFile = new File([b], "koe-qr.png", { type:"image/png" }); }, "image/png");
+}
+function needShare(){ return IS_IOS && IS_APP; }
+async function printQR(){
+  if (!needShare()){ window.print(); return; }
+  if (shareFile && navigator.canShare && navigator.canShare({ files:[shareFile] })){
+    show($("testMsg"), "info", "出てきたメニューで「プリント」を選んでください（画像を保存することもできます）。");
+    try { await navigator.share({ files:[shareFile] }); }
+    catch(e){ if (!e || e.name !== "AbortError") show($("testMsg"), "warn", "共有のメニューを開けませんでした。QRの画像を長押しして保存し、写真アプリから印刷してください。"); }
+    return;
+  }
+  show($("testMsg"), "warn", "ホーム画面から開いたときは、ここから印刷できませんでした。QRの画像を長押しして保存し、写真アプリから印刷してください。");
+}
+if (STANDALONE){ $("printBtn").hidden = false; $("printBtn").addEventListener("click", printQR); }
 
 /* =============== 画面：読む =============== */
 function describe(c){ const p = []; if (c.voice) p.push(fmtSec(c.voice.seconds) + " 秒の声"); if (c.melody) p.push(c.melody.notes.length + " 音のメロディ（" + (INST_NAME[c.melody.inst] || "") + "）"); return p.join(" と "); }
@@ -13207,7 +13238,7 @@ initCodec().then(() => { rebuild(); show($("melMsg"), "info", "見本として�
 });
 if (STANDALONE && "serviceWorker" in navigator && SECURE) navigator.serviceWorker.register("sw.js").catch(() => {});
 if (STANDALONE){
-  const isApp = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+  const isApp = IS_APP;
   let deferred = null;
   window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); deferred = e; $("installBtn").hidden = false; });
   $("installBtn").addEventListener("click", async () => { if (!deferred) return; deferred.prompt(); try { await deferred.userChoice; } catch(e){} deferred = null; $("installBtn").hidden = true; });
