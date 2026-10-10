@@ -12,8 +12,9 @@
   5. そのアドレスで開くと「届いた声のQR」が出て、再生できる
   6. ひとこと（種類3）が往復し、届いた画面に出る。「リンクで送る」で送ったリンクを開くと聞ける
   7. 「カメラで読み取る」で、カメラの映像（試験用のにせのカメラに、少しぼかした細かいQRを映す）から読み取れる
+  8. 一度開いたあと新しい版を出すと、1回読み込み直すだけで新しい版が出る。ネットを切っても開ける（sw.js）
 """
-import os, sys, math, base64
+import os, sys, math, base64, re, threading, http.server, functools
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -219,6 +220,34 @@ with sync_playwright() as pw:
         txt = pc.inner_text("#readMsg")
     check("カメラの映像から細かいQRを読み取れる", "秒の声" in txt and pc.is_hidden("#camBox"), f"型番{gray['ver']} {txt}")
     bc.close(); os.remove(y4m)
+    # 新しい版をすぐ出す・オフラインでも開ける（localhost で配り、sw.js を動かす）
+    state = {"ver": None}
+    class H(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def do_GET(self):
+            path = self.path.split("?")[0].split("#")[0]
+            if state["ver"] and path in ("/", "/index.html"):
+                body = re.sub(r"試作版 [0-9.]+", "試作版 " + state["ver"], open(os.path.join(ROOT, "index.html"), encoding="utf-8").read()).encode()
+                self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body); return
+            return super().do_GET()
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(H, directory=ROOT))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://localhost:{srv.server_address[1]}/"
+    ctx = b.new_context(); ps = ctx.new_page(); ps.on("pageerror", lambda e: errs.append(str(e)))
+    ps.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    ps.goto(base); ps.wait_for_function("navigator.serviceWorker && navigator.serviceWorker.controller", timeout=15000)
+    ps.wait_for_timeout(500)
+    state["ver"] = "9.9.9"
+    ps.reload(); ps.wait_for_selector("h1")
+    head = ps.inner_text("h1")
+    check("新しい版を出すと、1回読み込み直すだけで新しい版が出る", "9.9.9" in head, head)
+    ctx.set_offline(True)
+    try:
+        ps.reload(); ps.wait_for_function("window.__koe && __koe.ready()", timeout=15000); off = ps.inner_text("h1")
+    except Exception as e:
+        off = str(e)[:80]
+    check("ネットを切っても開ける", "試作版" in off, off)
+    ctx.close(); srv.shutdown()
     check("ページのエラーなし", not errs, "; ".join(errs))
     b.close()
 sys.exit(0 if ok else 1)
