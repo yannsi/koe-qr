@@ -11,6 +11,7 @@
      いちばん長い声を入れても型番40に収まる。古い形（先頭が VQ）も今までどおり収まる
   5. そのアドレスで開くと「届いた声のQR」が出て、再生できる
   6. ひとこと（種類3）が往復し、届いた画面に出る。「リンクで送る」で送ったリンクを開くと聞ける
+     長い声ではLINEで押せない長さだと知らせ、「LINEで送れる長さにする」で1,700文字までにおさまり、開くと聞ける
   7. 「カメラで読み取る」で、カメラの映像（試験用のにせのカメラに、少しぼかした細かいQRを映す）から読み取れる
   8. 一度開いたあと新しい版を出すと、1回読み込み直すだけで新しい版が出る。ネットを切っても開ける（sw.js）
 """
@@ -153,7 +154,42 @@ with sync_playwright() as pw:
     check("共有メニューがなければリンクをコピーする", "#" in p7.evaluate("window.__copied") and p7.is_visible("#shareMsg"))
     p7.check("#rawFmt"); p7.wait_for_timeout(300)
     check("最大の長さの形では「リンクで送る」を出さない", p7.is_hidden("#shareBtn"))
+    check("最大の長さの形では「LINEで送れる長さにする」も出さない", p7.is_hidden("#lineFitOpt"))
     ctx.close()
+
+    # LINEで送れる長さ（長い声を入れると知らせ、選ぶと1,700文字までにおさめる）
+    import struct, tempfile
+    wav = os.path.join(tempfile.gettempdir(), "koe-long.wav")
+    long_pcm = (pcm * 7)[:8000 * 20]   # 20秒
+    with open(wav, "wb") as f:
+        data = struct.pack("<%dh" % len(long_pcm), *[max(-32768, min(32767, v)) for v in long_pcm])
+        f.write(b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, 8000, 16000, 2, 16) + b"data" + struct.pack("<I", len(data)) + data)
+    ctx = b.new_context(viewport={"width": 400, "height": 860})
+    ctx.add_init_script("""window.__shared = []; navigator.share = async d => { window.__shared.push(d); };""")
+    p8 = ctx.new_page(); p8.on("pageerror", lambda e: errs.append(str(e)))
+    p8.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    p8.goto(URL); p8.wait_for_selector("#outCard:not([hidden])", timeout=15000)
+    p8.click("label[for=modeLong]"); p8.click("#melClear")
+    p8.wait_for_timeout(500)
+    p8.set_input_files("#audioFile", wav); p8.wait_for_timeout(2500)
+    L = p8.evaluate("__koe.LINE_MAX")
+    n0 = len(p8.evaluate("__koe.shareLink()")); cls0 = p8.get_attribute("#linkLen", "class")
+    check("長い声ではLINEで押せない長さだと知らせる", n0 > L and "warn" in cls0 and p8.is_visible("#lineFitOpt"), f"{n0}文字")
+    p8.check("#lineFit"); p8.wait_for_timeout(800)
+    n1 = len(p8.evaluate("__koe.shareLink()")); cls1 = p8.get_attribute("#linkLen", "class"); sec1 = float(p8.inner_text("#stSec"))
+    check("「LINEで送れる長さにする」で1,700文字までにおさまる", n1 <= L and "ok" in cls1 and sec1 >= 9, f"{n1}文字・声{sec1}秒")
+    p8.click("#shareBtn"); p8.wait_for_timeout(300)
+    url = p8.evaluate("window.__shared")[0]["url"]
+    p9 = ctx.new_page(); p9.on("pageerror", lambda e: errs.append(str(e)))
+    p9.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    p9.goto(URL + url[url.index("#"):])
+    p9.wait_for_selector("#linkCard:not([hidden])", timeout=15000)
+    p9.click("#linkPlay"); p9.wait_for_timeout(1200)
+    st = p9.evaluate("(() => { const a = __koe.audio(); return a ? { paused: a.paused, t: a.currentTime } : null })()")
+    check("LINE用の長さのリンクを開くと聞ける", bool(st) and not st["paused"] and st["t"] > 0.3, str(st))
+    p8.uncheck("#lineFit"); p8.wait_for_timeout(800)
+    check("選ぶのをやめると、元の長さの声に戻る", len(p8.evaluate("__koe.shareLink()")) == n0)
+    ctx.close(); os.remove(wav)
 
     # iPhoneのホーム画面から開いたときの印刷（共有メニューにQRの画像を渡す）
     ctx = b.new_context(viewport={"width": 400, "height": 860},

@@ -130,7 +130,7 @@ footer a{color:var(--ai);}
 
 <div class="wrap">
   <header style="display:flex;flex-direction:column;gap:6px">
-    <h1>声のQR<small>試作版 0.5.3</small></h1>
+    <h1>声のQR<small>試作版 0.6.0</small></h1>
     <p class="lead">録音した声とメロディを、QRコードの中にそのまま入れます。読み取るときにネットはいりません。</p>
   </header>
 
@@ -232,6 +232,8 @@ footer a{color:var(--ai);}
       <p class="hint">画像を長押しすると保存できます。型番が大きいほど升目が細かいので、印刷するときは<b>7〜8cm角以上</b>にしてください。<span id="fmtHint"></span></p>
       <label class="opt"><input type="checkbox" id="rawFmt"><span><b>最大の長さで作る</b><br>声が約1秒長く入りますが、スマホのカメラでは読めず、このページの「QRを読んで聞く」でだけ聞ける形になります。</span></label>
       <button class="btn primary" id="shareBtn" type="button">リンクで送る（LINE・メールなど）</button>
+      <p class="msg" id="linkLen" hidden></p>
+      <label class="opt" id="lineFitOpt"><input type="checkbox" id="lineFit"><span><b>LINEで送れる長さにする</b><br><span id="lineFitHint">LINEは長すぎるリンクを押せる形にしないため、リンクを1,700文字までにおさめます。</span></span></label>
       <p class="hint" id="shareHint">QRにしなくても、リンクを送るだけで声が届きます。受け取った人はリンクを押すと聞けます。声はリンクの中に入っていて、どこにも置かれません。</p>
       <textarea class="linkbox" id="linkBox" readonly hidden aria-label="送るリンク"></textarea>
       <p class="msg" id="shareMsg" hidden></p>
@@ -12900,6 +12902,14 @@ function capLink(prefix){
   let n = CAP; while (n > 0){ const ch = 3*Math.floor(n/2) + 2*(n%2); if (head + 11*Math.floor(ch/2) + 6*(ch%2) <= QR_BITS) return n; n--; }
   return 0;
 }
+/* LINEで押せるリンクになる長さ。実測で1,800文字はリンクになり、1,900文字はならなかった（2026年10月）。余裕を見て1,700文字 */
+const LINE_MAX = 1700;
+const b43Len = n => 3*Math.floor(n/2) + 2*(n%2);
+/* リンク全体（アドレス＋#＋中身）を LINE_MAX 文字までにおさめられる中身の最大バイト数 */
+function capLine(prefix){
+  let n = CAP; while (n > 0 && prefix.length + 1 + b43Len(n) > LINE_MAX) n--;
+  return n;
+}
 /* 読み取ったQRの中身（バイト列）から、声のQRの中身を取り出す。古い形（先頭がVQ）もアドレスの形も読む */
 function extractPayload(bytes){
   if (bytes.length >= 2 && bytes[0] === 0x56 && bytes[1] === 0x51) return bytes;
@@ -13056,12 +13066,16 @@ let lastPCM = null, lastPayload = null, lastQR = null, maxSec = 15, melState = {
 const curText = () => $("msgText").value.replace(/\s+/g, " ").trim();
 const curTextData = () => { const t = curText(); return t ? new TextEncoder().encode(t) : null; };
 const useLink = () => !$("rawFmt").checked;
-const capNow = () => useLink() ? capLink(linkBase()) : CAP;
-function maxVoiceSeconds(id){ const m = modeInfo(id), td = curTextData(); const melSec = (melState.data ? 3 + melState.data.length : 0) + (td ? 3 + td.length : 0);
-  return Math.max(0, Math.floor((capNow()-3-melSec-6)*8/m.nb)) * m.spf / 8000; }
+const forLine = () => useLink() && $("lineFit").checked;
+const capForLine = () => Math.min(capLink(linkBase()), capLine(linkBase()));
+const capNow = () => !useLink() ? CAP : forLine() ? capForLine() : capLink(linkBase());
+function maxVoiceSeconds(id, cap){ const m = modeInfo(id), td = curTextData(); const melSec = (melState.data ? 3 + melState.data.length : 0) + (td ? 3 + td.length : 0);
+  return Math.max(0, Math.floor(((cap || capNow())-3-melSec-6)*8/m.nb)) * m.spf / 8000; }
 function refreshCaps(){
   const saveMel = melState; $("capHq").textContent = "最大 " + Math.floor(maxVoiceSeconds(5)) + "秒"; $("capLong").textContent = "最大 " + Math.floor(maxVoiceSeconds(8)) + "秒"; melState = saveMel;
   maxSec = maxVoiceSeconds(curMode());
+  const lc = capForLine();
+  $("lineFitHint").textContent = "LINEは長すぎるリンクを押せる形にしないため、リンクを" + LINE_MAX.toLocaleString("ja-JP") + "文字までにおさめます。声は 音質優先で約" + Math.floor(maxVoiceSeconds(5, lc)) + "秒・長さ優先で約" + Math.floor(maxVoiceSeconds(8, lc)) + "秒まで入ります（ひとこと・メロディの分だけ短くなります）。";
   $("recSecs").innerHTML = "0.0<small> 秒 / 最大 " + Math.floor(maxSec) + "秒</small>";
 }
 function readMelodyInput(){
@@ -13087,7 +13101,12 @@ function rebuild(){
   const msg = curText();
   $("qrCap").textContent = (msg ? "「" + msg + "」 ・ " : "声のQR ・ ") + parts.join(" ＋ ");
   $("printCap").textContent = (msg ? "「" + msg + "」　" : "") + "声のQR（" + parts.join(" ＋ ") + "）　" + (link ? "スマホのカメラで読み取ると聞けます" : "読み取りは「声のQR」ページで");
-  $("shareBtn").hidden = !link; $("shareHint").hidden = !link; $("linkBox").hidden = true; show($("shareMsg"), "", "");
+  $("shareBtn").hidden = !link; $("shareHint").hidden = !link; $("lineFitOpt").hidden = !link; $("linkBox").hidden = true; show($("shareMsg"), "", "");
+  if (link){ const len = shareLink().length, n = len.toLocaleString("ja-JP");
+    if (len <= LINE_MAX) show($("linkLen"), "ok", "リンクは " + n + " 文字です。LINEでも押せるリンクになります。");
+    else if (forLine()) show($("linkLen"), "warn", "リンクが " + n + " 文字あり、メロディやひとことが長いため、LINEで送れる長さにおさまりません。メロディを短くしてください。");
+    else show($("linkLen"), "warn", "リンクが " + n + " 文字あり、LINEでは長すぎて押せるリンクになりません（" + LINE_MAX.toLocaleString("ja-JP") + "文字まで）。LINEで送るときは、下の「LINEで送れる長さにする」を選んでください。"); }
+  else show($("linkLen"), "", "");
   makeShareFile(qr.canvas, $("printCap").textContent);
   $("fmtHint").textContent = link
     ? "スマホのカメラで読むと声のQRのページが開いて、そのまま聞けます（初めて開くスマホでは、ページを読み込むのにネットが要ります）。" + (base !== CANON && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? "いまは確認用のアドレスで開いているので、このQRは7日ほどで開けなくなります。" : "")
@@ -13096,14 +13115,16 @@ function rebuild(){
   $("stBytes").textContent = p.bytes.length.toLocaleString("ja-JP"); $("stVer").textContent = qr.version;
   $("outCard").hidden = false; show($("testMsg"), "", "");
   if (lastPCM){ const orig = lastPCM.length/8000;
-    if (orig > p.voiceSec + 0.2) show($("makeMsg"), "warn", "声が長かったので、最初の " + fmtSec(p.voiceSec) + " 秒だけを入れました。メロディを短くするか「長さ優先」にすると、もう少し入ります。");
+    if (orig > p.voiceSec + 0.2) show($("makeMsg"), "warn", forLine()
+      ? "LINEで送れる長さにするため、最初の " + fmtSec(p.voiceSec) + " 秒だけを入れました。" + (curMode() === 5 ? "「長さ優先」にすると、もう少し入ります。" : "")
+      : "声が長かったので、最初の " + fmtSec(p.voiceSec) + " 秒だけを入れました。メロディを短くするか「長さ優先」にすると、もう少し入ります。");
     else show($("makeMsg"), "ok", fmtSec(p.voiceSec) + " 秒の声を入れました。"); }
 }
 let melTimer = 0;
 $("melText").addEventListener("input", () => { clearTimeout(melTimer); melTimer = setTimeout(rebuild, 350); });
 $("msgText").addEventListener("input", () => { clearTimeout(melTimer); melTimer = setTimeout(rebuild, 350); });
 $("tempo").addEventListener("input", () => { clearTimeout(melTimer); melTimer = setTimeout(rebuild, 200); $("tempoOut").textContent = "♩＝" + $("tempo").value; });
-document.querySelectorAll('input[name="inst"],input[name="mode"],#rawFmt').forEach(r => r.addEventListener("change", rebuild));
+document.querySelectorAll('input[name="inst"],input[name="mode"],#rawFmt,#lineFit').forEach(r => r.addEventListener("change", rebuild));
 /* 選んだ見本のボタンに印を付ける。楽譜を書きかえたら外す */
 function markSample(){
   const t = $("melText").value;
@@ -13357,7 +13378,7 @@ if (STANDALONE){
     navigator.serviceWorker.ready.then(() => { $("offlineStatus").textContent = "この端末には保存済みです。ネットがなくても開けます。"; }).catch(() => {});
 }
 window.__koe = { mixToFloat, wavBlob, audio: () => audioEl, buildPayload, parsePayload, parseMelody, encodeMelody, renderMelody, makeQR, readQRFromCanvas,
-  toB43, fromB43, extractPayload, capLink, linkBase, shareLink, CAP, CANON, ready: () => !!C2 };
+  toB43, fromB43, extractPayload, capLink, capLine, linkBase, shareLink, LINE_MAX, CAP, CANON, ready: () => !!C2 };
 })();
 </script>
 
