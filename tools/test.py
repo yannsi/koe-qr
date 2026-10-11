@@ -40,6 +40,10 @@ with sync_playwright() as pw:
     page.goto(URL)
     page.wait_for_function("window.__koe && __koe.ready()", timeout=15000)
     check("ページが開き、Codec2 が動く", True)
+    page.wait_for_timeout(300)
+    check("開いた直後はメロディが空で、声だけのつもりで見本が入らない",
+          page.input_value("#melText") == "" and page.is_hidden("#outCard"))
+    page.click("[data-sample=kkk]")
     res = page.evaluate("""([pcm]) => {
       const k = __koe, out = {};
       const mel = k.parseMelody(document.getElementById('melText').value);
@@ -122,7 +126,7 @@ with sync_playwright() as pw:
     ctx.add_init_script("""window.__shared = []; navigator.share = async d => { window.__shared.push(d); };""")
     p5 = ctx.new_page(); p5.on("pageerror", lambda e: errs.append(str(e)))
     p5.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    p5.goto(URL); p5.wait_for_selector("#outCard:not([hidden])", timeout=15000)
+    p5.goto(URL); p5.wait_for_function("window.__koe && __koe.ready()", timeout=15000); p5.click("[data-sample=kkk]"); p5.wait_for_selector("#outCard:not([hidden])", timeout=15000)
     rt = p5.evaluate("""([pcm, msg]) => { const k = __koe;
       const pl = k.buildPayload(Int16Array.from(pcm), 5, null, k.CAP, new TextEncoder().encode(msg));
       const c = k.parsePayload(pl.bytes); return { text: c.text, voice: c.voice ? c.voice.seconds : 0 }; }""", [pcm, MSG])
@@ -149,7 +153,7 @@ with sync_playwright() as pw:
     ctx.add_init_script("""delete Navigator.prototype.share; window.__copied = '';
       Object.defineProperty(navigator, 'clipboard', { get: () => ({ writeText: async t => { window.__copied = t; } }) });""")
     p7 = ctx.new_page(); p7.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    p7.goto(URL); p7.wait_for_selector("#outCard:not([hidden])", timeout=15000)
+    p7.goto(URL); p7.wait_for_function("window.__koe && __koe.ready()", timeout=15000); p7.click("[data-sample=kkk]"); p7.wait_for_selector("#outCard:not([hidden])", timeout=15000)
     p7.click("#shareBtn"); p7.wait_for_timeout(300)
     check("共有メニューがなければリンクをコピーする", "#" in p7.evaluate("window.__copied") and p7.is_visible("#shareMsg"))
     p7.check("#rawFmt"); p7.wait_for_timeout(300)
@@ -168,7 +172,7 @@ with sync_playwright() as pw:
     ctx.add_init_script("""window.__shared = []; navigator.share = async d => { window.__shared.push(d); };""")
     p8 = ctx.new_page(); p8.on("pageerror", lambda e: errs.append(str(e)))
     p8.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    p8.goto(URL); p8.wait_for_selector("#outCard:not([hidden])", timeout=15000)
+    p8.goto(URL); p8.wait_for_function("window.__koe && __koe.ready()", timeout=15000); p8.click("[data-sample=kkk]"); p8.wait_for_selector("#outCard:not([hidden])", timeout=15000)
     p8.click("label[for=modeLong]"); p8.click("#melClear")
     p8.wait_for_timeout(500)
     p8.set_input_files("#audioFile", wav); p8.wait_for_timeout(2500)
@@ -203,7 +207,7 @@ with sync_playwright() as pw:
       window.print = () => { window.__printed = true; };""")
     p3 = ctx.new_page(); p3.on("pageerror", lambda e: errs.append(str(e)))
     p3.route("**/fonts.googleapis.com/**", lambda r: r.abort())
-    p3.goto(URL); p3.wait_for_selector("#outCard:not([hidden])", timeout=15000); p3.wait_for_timeout(500)
+    p3.goto(URL); p3.wait_for_function("window.__koe && __koe.ready()", timeout=15000); p3.click("[data-sample=kkk]"); p3.wait_for_selector("#outCard:not([hidden])", timeout=15000); p3.wait_for_timeout(500)
     p3.click("#printBtn"); p3.wait_for_timeout(300)
     sh = p3.evaluate("({ shared: window.__shared, printed: !!window.__printed })")
     ok_share = bool(sh["shared"]) and sh["shared"][0][0]["type"] == "image/png" and sh["shared"][0][0]["size"] > 1000 and not sh["printed"]
@@ -211,7 +215,7 @@ with sync_playwright() as pw:
     ctx.close()
     p4 = b.new_page(); p4.route("**/fonts.googleapis.com/**", lambda r: r.abort())
     p4.add_init_script("window.print = () => { window.__printed = true; };")
-    p4.goto(URL); p4.wait_for_selector("#outCard:not([hidden])", timeout=15000)
+    p4.goto(URL); p4.wait_for_function("window.__koe && __koe.ready()", timeout=15000); p4.click("[data-sample=kkk]"); p4.wait_for_selector("#outCard:not([hidden])", timeout=15000)
     p4.click("#printBtn"); p4.wait_for_timeout(200)
     check("ほかの端末では印刷ボタンでそのまま印刷する", p4.evaluate("!!window.__printed"))
     # メロディの見本ボタン：押したものに印が付き、書きかえると外れる
@@ -220,10 +224,11 @@ with sync_playwright() as pw:
     p8.goto(URL); p8.wait_for_function("window.__koe && __koe.ready()", timeout=15000)
     pressed = lambda: p8.evaluate("[...document.querySelectorAll('[data-sample]')].map(b => b.getAttribute('aria-pressed'))")
     first = pressed()
+    p8.click("[data-sample=kkk]"); first2 = pressed()
     p8.click("[data-sample=ryukyu]"); after = pressed()
     p8.fill("#melText", "ド レ ミ"); p8.dispatch_event("#melText", "input"); edited = pressed()
     check("押したメロディの見本に印が付き、書きかえると外れる",
-          first == ["true", "false", "false"] and after == ["false", "false", "true"] and edited == ["false", "false", "false"], f"{first} {after} {edited}")
+          first == ["false", "false", "false"] and first2 == ["true", "false", "false"] and after == ["false", "false", "true"] and edited == ["false", "false", "false"], f"{first} {first2} {after} {edited}")
 
     # にせのカメラの映像を作る（10秒の声が入った細かいQRを、1280×720 の灰色の背景の真ん中に、少しぼかして置く）
     gray = page.evaluate("""([pcm]) => { const k = __koe; const long = new Int16Array(8000*10);

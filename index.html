@@ -130,7 +130,7 @@ footer a{color:var(--ai);}
 
 <div class="wrap">
   <header style="display:flex;flex-direction:column;gap:6px">
-    <h1>声のQR<small>試作版 0.6.1</small></h1>
+    <h1>声のQR<small>試作版 0.6.2</small></h1>
     <p class="lead">録音した声とメロディを、QRコードの中にそのまま入れます。読み取るときにネットはいりません。</p>
   </header>
 
@@ -13359,8 +13359,9 @@ $("linkPlay").addEventListener("click", () => { if (linkRead) playContent(linkRe
 window.addEventListener("hashchange", openFromLink);
 
 /* =============== 起動 =============== */
-$("melText").value = SAMPLES.kkk.text; $("tempo").value = SAMPLES.kkk.tempo; $("tempoOut").textContent = "♩＝" + SAMPLES.kkk.tempo; markSample();
-initCodec().then(() => { rebuild(); show($("melMsg"), "info", "見本として「きらきら星」を工工四で入れてあります。書きかえて使ってください。"); openFromLink(); }).catch(() => {
+/* メロディは最初は空（試作版0.6.2）。見本を入れておくと、声だけのつもりでもきらきら星が一緒に入ってしまうため */
+$("tempoOut").textContent = "♩＝" + $("tempo").value; markSample();
+initCodec().then(() => { rebuild(); openFromLink(); }).catch(() => {
   show($("codecMsg"), "warn", "この画面では声の圧縮部品を動かせませんでした。ダウンロードしたファイル版を、ブラウザで開いて使ってください。");
   ["recBtn","camBtn"].forEach(id => $(id).disabled = true);
 });
