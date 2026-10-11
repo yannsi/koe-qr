@@ -130,7 +130,7 @@ footer a{color:var(--ai);}
 
 <div class="wrap">
   <header style="display:flex;flex-direction:column;gap:6px">
-    <h1>声のQR<small>試作版 0.6.0</small></h1>
+    <h1>声のQR<small>試作版 0.6.1</small></h1>
     <p class="lead">録音した声とメロディを、QRコードの中にそのまま入れます。読み取るときにネットはいりません。</p>
   </header>
 
@@ -164,6 +164,7 @@ footer a{color:var(--ai);}
         <div class="choice"><input type="radio" name="mode" id="modeHq" value="5" checked><label for="modeHq"><b>音質優先</b><span id="capHq">最大 15秒</span></label></div>
         <div class="choice"><input type="radio" name="mode" id="modeLong" value="8"><label for="modeLong"><b>長さ優先</b><span id="capLong">最大 26秒</span></label></div>
       </div>
+      <label class="opt" id="lineFitOpt"><input type="checkbox" id="lineFit"><span><b>LINEで送れる長さにする</b><br><span id="lineFitHint">LINEは長すぎるリンクを押せないため、声を短くしておさめます。</span></span></label>
       <div class="recrow">
         <button class="recbtn" id="recBtn" type="button" aria-label="録音を始める">録音</button>
         <div class="meter">
@@ -233,7 +234,7 @@ footer a{color:var(--ai);}
       <label class="opt"><input type="checkbox" id="rawFmt"><span><b>最大の長さで作る</b><br>声が約1秒長く入りますが、スマホのカメラでは読めず、このページの「QRを読んで聞く」でだけ聞ける形になります。</span></label>
       <button class="btn primary" id="shareBtn" type="button">リンクで送る（LINE・メールなど）</button>
       <p class="msg" id="linkLen" hidden></p>
-      <label class="opt" id="lineFitOpt"><input type="checkbox" id="lineFit"><span><b>LINEで送れる長さにする</b><br><span id="lineFitHint">LINEは長すぎるリンクを押せる形にしないため、リンクを1,700文字までにおさめます。</span></span></label>
+      <button class="btn" id="lineFitNow" type="button" hidden>LINEで送れる長さにする</button>
       <p class="hint" id="shareHint">QRにしなくても、リンクを送るだけで声が届きます。受け取った人はリンクを押すと聞けます。声はリンクの中に入っていて、どこにも置かれません。</p>
       <textarea class="linkbox" id="linkBox" readonly hidden aria-label="送るリンク"></textarea>
       <p class="msg" id="shareMsg" hidden></p>
@@ -13075,7 +13076,7 @@ function refreshCaps(){
   const saveMel = melState; $("capHq").textContent = "最大 " + Math.floor(maxVoiceSeconds(5)) + "秒"; $("capLong").textContent = "最大 " + Math.floor(maxVoiceSeconds(8)) + "秒"; melState = saveMel;
   maxSec = maxVoiceSeconds(curMode());
   const lc = capForLine();
-  $("lineFitHint").textContent = "LINEは長すぎるリンクを押せる形にしないため、リンクを" + LINE_MAX.toLocaleString("ja-JP") + "文字までにおさめます。声は 音質優先で約" + Math.floor(maxVoiceSeconds(5, lc)) + "秒・長さ優先で約" + Math.floor(maxVoiceSeconds(8, lc)) + "秒まで入ります（ひとこと・メロディの分だけ短くなります）。";
+  $("lineFitHint").textContent = "LINEは長すぎるリンクを押せないため、声を 音質優先で約" + Math.floor(maxVoiceSeconds(5, lc)) + "秒・長さ優先で約" + Math.floor(maxVoiceSeconds(8, lc)) + "秒までにします。QRで渡すだけなら選ばなくてかまいません。";
   $("recSecs").innerHTML = "0.0<small> 秒 / 最大 " + Math.floor(maxSec) + "秒</small>";
 }
 function readMelodyInput(){
@@ -13101,11 +13102,11 @@ function rebuild(){
   const msg = curText();
   $("qrCap").textContent = (msg ? "「" + msg + "」 ・ " : "声のQR ・ ") + parts.join(" ＋ ");
   $("printCap").textContent = (msg ? "「" + msg + "」　" : "") + "声のQR（" + parts.join(" ＋ ") + "）　" + (link ? "スマホのカメラで読み取ると聞けます" : "読み取りは「声のQR」ページで");
-  $("shareBtn").hidden = !link; $("shareHint").hidden = !link; $("lineFitOpt").hidden = !link; $("linkBox").hidden = true; show($("shareMsg"), "", "");
+  $("shareBtn").hidden = !link; $("shareHint").hidden = !link; $("lineFitOpt").hidden = !link; $("lineFitNow").hidden = true; $("linkBox").hidden = true; show($("shareMsg"), "", "");
   if (link){ const len = shareLink().length, n = len.toLocaleString("ja-JP");
     if (len <= LINE_MAX) show($("linkLen"), "ok", "リンクは " + n + " 文字です。LINEでも押せるリンクになります。");
     else if (forLine()) show($("linkLen"), "warn", "リンクが " + n + " 文字あり、メロディやひとことが長いため、LINEで送れる長さにおさまりません。メロディを短くしてください。");
-    else show($("linkLen"), "warn", "リンクが " + n + " 文字あり、LINEでは長すぎて押せるリンクになりません（" + LINE_MAX.toLocaleString("ja-JP") + "文字まで）。LINEで送るときは、下の「LINEで送れる長さにする」を選んでください。"); }
+    else { show($("linkLen"), "warn", "リンクが " + n + " 文字あり、LINEでは長すぎて押せるリンクになりません（" + LINE_MAX.toLocaleString("ja-JP") + "文字まで）。LINEで送るときは、下のボタンで声を短くしてください。"); $("lineFitNow").hidden = false; } }
   else show($("linkLen"), "", "");
   makeShareFile(qr.canvas, $("printCap").textContent);
   $("fmtHint").textContent = link
@@ -13235,6 +13236,8 @@ async function sendLink(){
   show($("shareMsg"), "info", "下のリンクを長押しして全部選び、コピーして送ってください。");
 }
 $("shareBtn").addEventListener("click", sendLink);
+/* できあがりの欄から「LINEで送れる長さにする」を選べるようにする（声の欄の選択と同じもの） */
+$("lineFitNow").addEventListener("click", () => { $("lineFit").checked = true; rebuild(); $("linkLen").scrollIntoView({ block:"center", behavior:"smooth" }); });
 
 /* =============== 画面：読む =============== */
 function describe(c){ const p = []; if (c.voice) p.push(fmtSec(c.voice.seconds) + " 秒の声"); if (c.melody) p.push(c.melody.notes.length + " 音のメロディ（" + (INST_NAME[c.melody.inst] || "") + "）"); return p.join(" と "); }
