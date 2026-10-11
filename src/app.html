@@ -86,6 +86,7 @@ kbd{font-family:inherit;background:var(--paper);border:1px solid var(--line);bor
 .hint{font-size:13px;color:var(--muted);margin:0;}
 .textin{font:inherit;font-size:18px;width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--paper);color:var(--ink);min-height:50px;}
 .textin:focus-visible{outline:3px solid var(--ai);outline-offset:2px;}
+.lock{display:flex;flex-direction:column;gap:10px;}
 .from{margin:0;font-size:22px;font-weight:700;line-height:1.5;overflow-wrap:anywhere;}
 .linkbox{font:inherit;font-size:13px;width:100%;min-height:90px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--paper);color:var(--ink);word-break:break-all;}
 .opt{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--muted);cursor:pointer;}
@@ -114,7 +115,7 @@ footer a{color:var(--ai);}
 
 <div class="wrap">
   <header style="display:flex;flex-direction:column;gap:6px">
-    <h1>声のQR<small>試作版 0.6.2</small></h1>
+    <h1>声のQR<small>試作版 0.7.0</small></h1>
     <p class="lead">録音した声とメロディを、QRコードの中にそのまま入れます。読み取るときにネットはいりません。</p>
   </header>
 
@@ -128,6 +129,11 @@ footer a{color:var(--ai);}
     <p class="label"><b>届いた声のQR</b></p>
     <p class="from" id="linkFrom" hidden></p>
     <p style="margin:0;font-size:18px" id="linkText"></p>
+    <div class="lock" id="linkLock" hidden>
+      <input class="textin" id="linkPw" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="合言葉を入れてください" aria-label="合言葉">
+      <button class="btn primary" id="linkOpen" type="button">開く</button>
+      <p class="msg" id="linkPwMsg" hidden></p>
+    </div>
     <button class="bigplay" id="linkPlay" type="button">▶ 再生する</button>
     <p class="hint">音が出ないときは、マナーモード（消音）を解除して、音量を上げてください。あなたも下の「QRを作る」で、声のQRを作れます。</p>
   </div>
@@ -203,6 +209,14 @@ footer a{color:var(--ai);}
       <p class="hint">受け取った人の画面に、声やメロディと一緒に大きく出ます。30文字まで。1文字ふえるごとに、声は約0.02〜0.03秒短くなります。</p>
     </div>
 
+    <!-- 合言葉 -->
+    <div class="card">
+      <p class="label"><b>合言葉</b>付けなくてもかまいません</p>
+      <input class="textin" id="pwText" type="text" maxlength="20" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="例：はなの好きな花" aria-label="合言葉（20文字まで）">
+      <p class="hint" id="pwHint">合言葉を付けると、知っている人だけが聞けます。声・メロディ・ひとことが隠れます。合言葉はQRやリンクとは別に、口で伝えるなどしてください。声は約0.3〜0.5秒短くなります。</p>
+      <p class="msg info" id="pwWeak" hidden></p>
+    </div>
+
     <!-- 出来上がり -->
     <div class="card" id="outCard" hidden>
       <p class="label"><b>できあがったQR</b></p>
@@ -253,6 +267,11 @@ footer a{color:var(--ai);}
       <p class="label"><b>読み取った中身</b></p>
       <p class="from" id="rdFrom" hidden></p>
       <p style="margin:0;font-size:18px" id="rdText"></p>
+      <div class="lock" id="rdLock" hidden>
+        <input class="textin" id="rdPw" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="合言葉を入れてください" aria-label="合言葉">
+        <button class="btn primary" id="rdOpen" type="button">開く</button>
+        <p class="msg" id="rdPwMsg" hidden></p>
+      </div>
       <button class="bigplay" id="playBtn" type="button">▶ 再生する</button>
       <p class="hint">音が出ないときは、マナーモード（消音）を解除して、音量を上げてください。</p>
     </div>
@@ -439,9 +458,39 @@ function buildPayload(pcm, modeId, melData, cap, textData){
   for (const [type, d] of parts){ out[o]=type; out[o+1]=d.length>>8; out[o+2]=d.length&255; out.set(d, o+3); o += 3 + d.length; }
   return { bytes: out, voiceSec: voice ? voice.seconds : 0 };
 }
+/* =============== 合言葉（種類4） =============== */
+/* 中身（VQ…の全体）を合言葉で閉じ、種類4の区画にして入れる：
+   種類4 = 方式(1) 塩(8) 初期値(12) 閉じた中身（AES-GCM、末尾16バイトが改ざん検知）
+   方式 1 = 合言葉から PBKDF2-SHA256（20万回）で鍵を作る。合言葉は NFKC で全角・半角をそろえ、前後の空白を除き、英字は小文字にそろえる。
+   ブラウザに最初からある暗号の部品（Web Crypto）だけを使い、ネットにもどこにも送らない。 */
+const LOCK_OVER = 3 + 3 + 1 + 8 + 12 + 16;   /* 閉じると増えるバイト数（外側の見出し・区画の見出し・方式・塩・初期値・検知） */
+const LOCK_ITER = 200000;
+const normPw = t => (t || "").normalize("NFKC").trim().toLowerCase();
+const canLock = () => !!(window.crypto && crypto.subtle && window.isSecureContext !== false);
+async function lockKey(pw, salt){
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(normPw(pw)), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({ name:"PBKDF2", hash:"SHA-256", salt, iterations: LOCK_ITER }, base, { name:"AES-GCM", length:256 }, false, ["encrypt","decrypt"]);
+}
+async function lockPayload(plain, pw){
+  const salt = crypto.getRandomValues(new Uint8Array(8)), iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name:"AES-GCM", iv }, await lockKey(pw, salt), plain));
+  const d = new Uint8Array(1 + 8 + 12 + ct.length); d[0] = 1; d.set(salt, 1); d.set(iv, 9); d.set(ct, 21);
+  const out = new Uint8Array(3 + 3 + d.length); out[0]=0x56; out[1]=0x51; out[2]=0x02;
+  out[3] = 4; out[4] = d.length>>8; out[5] = d.length&255; out.set(d, 6);
+  return out;
+}
+/* 合言葉で開く。ちがう合言葉なら "badpw" を投げる */
+async function unlockPayload(d, pw){
+  if (d.length < 1 + 8 + 12 + 16 || d[0] !== 1) throw new Error("lockfmt");
+  let plain;
+  try { plain = new Uint8Array(await crypto.subtle.decrypt({ name:"AES-GCM", iv: d.subarray(9, 21) }, await lockKey(pw, d.subarray(1, 9)), d.subarray(21))); }
+  catch(e){ throw new Error("badpw"); }
+  return parsePayload(plain);
+}
+
 function parsePayload(bytes){
   if (bytes.length < 3 || bytes[0] !== 0x56 || bytes[1] !== 0x51) throw new Error("notours");
-  const res = { voice:null, melody:null, text:"" };
+  const res = { voice:null, melody:null, text:"", locked:null };
   if (bytes[2] === 0x02){
     let o = 3;
     while (o + 3 <= bytes.length){
@@ -449,10 +498,11 @@ function parsePayload(bytes){
       if (type === 1) res.voice = decodeVoice(d);
       else if (type === 2) res.melody = decodeMelody(d);
       else if (type === 3) res.text = new TextDecoder().decode(d).slice(0, 60);
+      else if (type === 4) res.locked = d.slice();
       o += 3 + len;
     }
   } else res.voice = decodeVoice(bytes.subarray(2));   /* 試作版0.1の形式 */
-  if (!res.voice && !res.melody) throw new Error("empty");
+  if (!res.voice && !res.melody && !res.locked) throw new Error("empty");
   return res;
 }
 
@@ -483,7 +533,7 @@ function linkBase(){
 }
 /* アドレスの形で入れられる中身の最大バイト数（前のアドレスはバイト、後ろは英数字で書く） */
 function capLink(prefix){
-  const head = 4 + 16 + 8*prefix.length + 4 + 13;
+  const head = 4 + 16 + 8*(prefix.length + 1) + 4 + 13;   /* アドレスの後ろの「#」1文字の分も数える（試作版0.7.0で修正） */
   let n = CAP; while (n > 0){ const ch = 3*Math.floor(n/2) + 2*(n%2); if (head + 11*Math.floor(ch/2) + 6*(ch%2) <= QR_BITS) return n; n--; }
   return 0;
 }
@@ -653,13 +703,15 @@ const curTextData = () => { const t = curText(); return t ? new TextEncoder().en
 const useLink = () => !$("rawFmt").checked;
 const forLine = () => useLink() && $("lineFit").checked;
 const capForLine = () => Math.min(capLink(linkBase()), capLine(linkBase()));
-const capNow = () => !useLink() ? CAP : forLine() ? capForLine() : capLink(linkBase());
+const curPw = () => canLock() ? normPw($("pwText").value) : "";
+const lockOver = () => curPw() ? LOCK_OVER : 0;
+const capNow = () => (!useLink() ? CAP : forLine() ? capForLine() : capLink(linkBase())) - lockOver();
 function maxVoiceSeconds(id, cap){ const m = modeInfo(id), td = curTextData(); const melSec = (melState.data ? 3 + melState.data.length : 0) + (td ? 3 + td.length : 0);
   return Math.max(0, Math.floor(((cap || capNow())-3-melSec-6)*8/m.nb)) * m.spf / 8000; }
 function refreshCaps(){
   const saveMel = melState; $("capHq").textContent = "最大 " + Math.floor(maxVoiceSeconds(5)) + "秒"; $("capLong").textContent = "最大 " + Math.floor(maxVoiceSeconds(8)) + "秒"; melState = saveMel;
   maxSec = maxVoiceSeconds(curMode());
-  const lc = capForLine();
+  const lc = capForLine() - lockOver();
   $("lineFitHint").textContent = "LINEは長すぎるリンクを押せないため、声を 音質優先で約" + Math.floor(maxVoiceSeconds(5, lc)) + "秒・長さ優先で約" + Math.floor(maxVoiceSeconds(8, lc)) + "秒までにします。QRで渡すだけなら選ばなくてかまいません。";
   $("recSecs").innerHTML = "0.0<small> 秒 / 最大 " + Math.floor(maxSec) + "秒</small>";
 }
@@ -678,12 +730,27 @@ function rebuild(){
   readMelodyInput(); refreshCaps();
   if (!lastPCM && !melState.data){ $("outCard").hidden = true; lastPayload = null; return; }
   const p = buildPayload(lastPCM, curMode(), melState.data, capNow(), curTextData());
-  lastPayload = p.bytes;
+  lastPlain = p.bytes;
+  const pw = curPw(), seq = ++buildSeq;
+  if (pw) lockPayload(p.bytes, pw).then(b => { if (seq === buildSeq) finishBuild(p, b, pw); });
+  else finishBuild(p, p.bytes, "");
+  showWeak(pw);
+}
+let lastPlain = null, buildSeq = 0, lastPw = "";
+/* 短い合言葉・数字だけの合言葉は、知らせる（作るのは止めない） */
+function showWeak(pw){
+  if (!pw) { show($("pwWeak"), "", ""); return; }
+  const weak = [...pw].length < 6 || /^[0-9]+$/.test(pw);
+  show($("pwWeak"), weak ? "warn" : "", weak ? "短い合言葉や数字だけの合言葉は、詳しい人なら当てられてしまいます。家族の内緒話くらいの用途にしてください。" : "");
+}
+function finishBuild(p, bytes, pw){
+  lastPayload = bytes; lastPw = pw;
   const link = useLink(), base = linkBase();
-  const qr = makeQR(p.bytes, link ? base + "#" : null); lastQR = qr;
+  const qr = makeQR(bytes, link ? base + "#" : null); lastQR = qr;
   const url = qr.canvas.toDataURL("image/png"); $("qrImg").src = url; $("printImg").src = url;
   const parts = []; if (p.voiceSec) parts.push("声 " + fmtSec(p.voiceSec) + "秒"); if (melState.data) parts.push("メロディ " + melState.notes.length + "音（" + INST_NAME[curInst()] + "）");
-  const msg = curText();
+  const msg = pw ? "" : curText();   /* 合言葉つきのときは、ひとことも隠す */
+  if (pw) parts.push("合言葉つき");
   $("qrCap").textContent = (msg ? "「" + msg + "」 ・ " : "声のQR ・ ") + parts.join(" ＋ ");
   $("printCap").textContent = (msg ? "「" + msg + "」　" : "") + "声のQR（" + parts.join(" ＋ ") + "）　" + (link ? "スマホのカメラで読み取ると聞けます" : "読み取りは「声のQR」ページで");
   $("shareBtn").hidden = !link; $("shareHint").hidden = !link; $("lineFitOpt").hidden = !link; $("lineFitNow").hidden = true; $("linkBox").hidden = true; show($("shareMsg"), "", "");
@@ -697,7 +764,7 @@ function rebuild(){
     ? "スマホのカメラで読むと声のQRのページが開いて、そのまま聞けます（初めて開くスマホでは、ページを読み込むのにネットが要ります）。" + (base !== CANON && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? "いまは確認用のアドレスで開いているので、このQRは7日ほどで開けなくなります。" : "")
     : "スマホの標準カメラでは読めないので、このページの「QRを読んで聞く」で読み取ります。";
   $("stSec").textContent = fmtSec(p.voiceSec); $("stNotes").textContent = melState.notes.length;
-  $("stBytes").textContent = p.bytes.length.toLocaleString("ja-JP"); $("stVer").textContent = qr.version;
+  $("stBytes").textContent = bytes.length.toLocaleString("ja-JP"); $("stVer").textContent = qr.version;
   $("outCard").hidden = false; show($("testMsg"), "", "");
   if (lastPCM){ const orig = lastPCM.length/8000;
     if (orig > p.voiceSec + 0.2) show($("makeMsg"), "warn", forLine()
@@ -708,6 +775,7 @@ function rebuild(){
 let melTimer = 0;
 $("melText").addEventListener("input", () => { clearTimeout(melTimer); melTimer = setTimeout(rebuild, 350); });
 $("msgText").addEventListener("input", () => { clearTimeout(melTimer); melTimer = setTimeout(rebuild, 350); });
+$("pwText").addEventListener("input", () => { clearTimeout(melTimer); melTimer = setTimeout(rebuild, 500); });
 $("tempo").addEventListener("input", () => { clearTimeout(melTimer); melTimer = setTimeout(rebuild, 200); $("tempoOut").textContent = "♩＝" + $("tempo").value; });
 document.querySelectorAll('input[name="inst"],input[name="mode"],#rawFmt,#lineFit').forEach(r => r.addEventListener("change", rebuild));
 /* 選んだ見本のボタンに印を付ける。楽譜を書きかえたら外す */
@@ -760,16 +828,17 @@ async function startRec(){
 }
 function stopRec(){ clearInterval(recTimer); $("recBtn").classList.remove("on"); $("recBtn").textContent = "録音"; $("recBtn").setAttribute("aria-label","録音を始める"); if (rec && rec.state !== "inactive") rec.stop(); }
 $("recBtn").addEventListener("click", () => { if (!C2) return; rec ? stopRec() : startRec(); });
-$("previewBtn").addEventListener("click", () => { if (lastPayload) playContent(parsePayload(lastPayload), $("previewBtn")); });
-$("selfTestBtn").addEventListener("click", () => {
+$("previewBtn").addEventListener("click", () => { if (lastPlain) playContent(parsePayload(lastPlain), $("previewBtn")); });
+$("selfTestBtn").addEventListener("click", async () => {
   if (!lastQR) return;
   const raw = readQRFromCanvas(lastQR.canvas);
   if (!raw){ show($("testMsg"), "warn", "読み取りに失敗しました。"); return; }
   let got = null; try { got = extractPayload(raw); } catch(e){}
   const same = !!got && got.length === lastPayload.length && got.every((v,i) => v === lastPayload[i]);
   if (!same){ show($("testMsg"), "warn", "読み取れましたが、中身が一致しませんでした。"); return; }
-  const c = parsePayload(got);
-  show($("testMsg"), "ok", "QRを読み取り、中身を取り出せました（" + describe(c) + "）。再生します。");
+  let c = parsePayload(got);
+  if (c.locked){ try { c = await unlockPayload(c.locked, lastPw); } catch(e){ show($("testMsg"), "warn", "読み取れましたが、合言葉で開けませんでした。"); return; } }
+  show($("testMsg"), "ok", "QRを読み取り、" + (lastPw ? "合言葉で開いて、" : "") + "中身を取り出せました（" + describe(c) + "）。再生します。");
   playContent(c, $("selfTestBtn"));
 });
 /* 印刷：iPhoneのホーム画面から開いたときは window.print() が効かないので、
@@ -808,7 +877,8 @@ if (STANDALONE){ $("printBtn").hidden = false; $("printBtn").addEventListener("c
 const shareLink = () => lastPayload ? linkBase() + "#" + toB43(lastPayload) : "";
 async function sendLink(){
   const url = shareLink(); if (!url) return;
-  const msg = curText(), text = (msg ? "「" + msg + "」\n" : "") + "声のQRが届きました。リンクを押して聞いてください。";
+  const msg = lastPw ? "" : curText();
+  const text = (msg ? "「" + msg + "」\n" : "") + (lastPw ? "合言葉つきの声のQRが届きました。リンクを押して、教えてもらった合言葉を入れてください。" : "声のQRが届きました。リンクを押して聞いてください。");
   if (navigator.share){
     try { await navigator.share({ title:"声のQR", text, url }); show($("shareMsg"), "", ""); return; }
     catch(e){ if (e && e.name === "AbortError") return; }
@@ -827,11 +897,35 @@ $("lineFitNow").addEventListener("click", () => { $("lineFit").checked = true; r
 function describe(c){ const p = []; if (c.voice) p.push(fmtSec(c.voice.seconds) + " 秒の声"); if (c.melody) p.push(c.melody.notes.length + " 音のメロディ（" + (INST_NAME[c.melody.inst] || "") + "）"); return p.join(" と "); }
 let lastRead = null, camStream = null, scanning = false;
 const scanCv = document.createElement("canvas");
+/* 合言葉の欄を出し、開けたら中身を見せる。k は "rd"（読み取り）か "link"（届いたリンク） */
+function setupLock(k, c, onOpen){
+  const box = $(k + "Lock"), inp = $(k + "Pw"), btn = $(k + "Open");
+  box.hidden = !c.locked; show($(k + "PwMsg"), "", ""); inp.value = "";
+  if (!c.locked) return;
+  if (!canLock()){ show($(k + "PwMsg"), "warn", "この画面では合言葉を確かめられません。https:// で始まるアドレスで開いてください。"); return; }
+  const go = async () => {
+    if (!normPw(inp.value)) { show($(k + "PwMsg"), "warn", "合言葉を入れてください。"); inp.focus(); return; }
+    btn.disabled = true; show($(k + "PwMsg"), "info", "確かめています…");
+    try { const open = await unlockPayload(c.locked, inp.value); box.hidden = true; show($(k + "PwMsg"), "", ""); onOpen(open); }
+    catch(e){ show($(k + "PwMsg"), "warn", e.message === "badpw" ? "合言葉がちがいます。全角・半角、大文字・小文字は気にしなくてかまいません。もう一度確かめてください。" : "開けませんでした。QRが欠けていないか確かめてください。"); inp.select(); }
+    finally { btn.disabled = false; }
+  };
+  btn.onclick = go; inp.onkeydown = e => { if (e.key === "Enter") go(); };
+}
+function showRead(c){
+  $("rdFrom").textContent = c.text ? "「" + c.text + "」" : ""; $("rdFrom").hidden = !c.text;
+  $("rdText").textContent = describe(c) + " が入っていました。";
+  $("playBtn").hidden = false; lastRead = c; $("playBtn").focus();
+}
 function onRead(bytes){
-  try { const c = parsePayload(extractPayload(bytes)); lastRead = c;
-    $("rdFrom").textContent = c.text ? "「" + c.text + "」" : ""; $("rdFrom").hidden = !c.text;
-    $("rdText").textContent = describe(c) + " が入っていました。";
-    $("resultCard").hidden = false; show($("readMsg"), "ok", "読み取れました。「再生する」を押してください。"); $("playBtn").focus(); }
+  try { const c = parsePayload(extractPayload(bytes));
+    $("resultCard").hidden = false;
+    if (c.locked){ lastRead = null; $("rdFrom").hidden = true; $("playBtn").hidden = true;
+      $("rdText").textContent = "合言葉が付いています。";
+      setupLock("rd", c, open => { showRead(open); show($("readMsg"), "ok", "開けました。「再生する」を押してください。"); });
+      show($("readMsg"), "ok", "読み取れました。合言葉を入れて「開く」を押してください。"); $("rdPw").focus(); return; }
+    setupLock("rd", c); showRead(c);
+    show($("readMsg"), "ok", "読み取れました。「再生する」を押してください。"); }
   catch(e){ show($("readMsg"), "warn", "QRコードは読めましたが、声のQRではありませんでした。"); }
 }
 /* カメラの映像から読む。
@@ -932,11 +1026,15 @@ let linkRead = null;
 function openFromLink(){
   if (location.hash.length <= 1 || !C2) return;
   stopAll();
-  try { linkRead = parsePayload(fromHash(location.hash));
-    $("linkFrom").textContent = linkRead.text ? "「" + linkRead.text + "」" : ""; $("linkFrom").hidden = !linkRead.text;
-    $("linkText").textContent = describe(linkRead) + " が入っています。";
+  try { const c = parsePayload(fromHash(location.hash));
+    const showLink = o => { linkRead = o;
+      $("linkFrom").textContent = o.text ? "「" + o.text + "」" : ""; $("linkFrom").hidden = !o.text;
+      $("linkText").textContent = describe(o) + " が入っています。"; $("linkPlay").hidden = false; $("linkPlay").focus(); };
     $("linkCard").hidden = false; show($("linkMsg"), "", "");
-    $("linkPlay").focus(); }
+    if (c.locked){ linkRead = null; $("linkFrom").hidden = true; $("linkPlay").hidden = true;
+      $("linkText").textContent = "合言葉が付いています。教えてもらった合言葉を入れて「開く」を押してください。";
+      setupLock("link", c, showLink); $("linkPw").focus(); }
+    else { setupLock("link", c); showLink(c); } }
   catch(e){ linkRead = null; $("linkCard").hidden = true; show($("linkMsg"), "warn", "このアドレスに入っていた声のQRを読み取れませんでした。QRコードが欠けていないか、もう一度読み取ってみてください。"); }
 }
 $("linkPlay").addEventListener("click", () => { if (linkRead) playContent(linkRead, $("linkPlay")); });
@@ -945,6 +1043,7 @@ window.addEventListener("hashchange", openFromLink);
 /* =============== 起動 =============== */
 /* メロディは最初は空（試作版0.6.2）。見本を入れておくと、声だけのつもりでもきらきら星が一緒に入ってしまうため */
 $("tempoOut").textContent = "♩＝" + $("tempo").value; markSample();
+if (!canLock()){ $("pwText").disabled = true; $("pwHint").textContent = "この画面では合言葉を付けられません。https:// で始まるアドレスで開いてください。"; }
 initCodec().then(() => { rebuild(); openFromLink(); }).catch(() => {
   show($("codecMsg"), "warn", "この画面では声の圧縮部品を動かせませんでした。ダウンロードしたファイル版を、ブラウザで開いて使ってください。");
   ["recBtn","camBtn"].forEach(id => $(id).disabled = true);
@@ -966,6 +1065,6 @@ if (STANDALONE){
     navigator.serviceWorker.ready.then(() => { $("offlineStatus").textContent = "この端末には保存済みです。ネットがなくても開けます。"; }).catch(() => {});
 }
 window.__koe = { mixToFloat, wavBlob, audio: () => audioEl, buildPayload, parsePayload, parseMelody, encodeMelody, renderMelody, makeQR, readQRFromCanvas,
-  toB43, fromB43, extractPayload, capLink, capLine, linkBase, shareLink, LINE_MAX, CAP, CANON, ready: () => !!C2 };
+  toB43, fromB43, extractPayload, capLink, capLine, linkBase, shareLink, LINE_MAX, CAP, CANON, lockPayload, unlockPayload, LOCK_OVER, ready: () => !!C2 };
 })();
 </script>

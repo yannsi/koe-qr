@@ -12,6 +12,7 @@
   5. そのアドレスで開くと「届いた声のQR」が出て、再生できる
   6. ひとこと（種類3）が往復し、届いた画面に出る。「リンクで送る」で送ったリンクを開くと聞ける
      長い声ではLINEで押せない長さだと知らせ、「LINEで送れる長さにする」で1,700文字までにおさまり、開くと聞ける
+  6b. 合言葉つき：ひとことも隠れ、ちがう合言葉では開かず、正しい合言葉（全角でも）で開いて聞ける。いちばん長い声でも型番40に収まる
   7. 「カメラで読み取る」で、カメラの映像（試験用のにせのカメラに、少しぼかした細かいQRを映す）から読み取れる
   8. 一度開いたあと新しい版を出すと、1回読み込み直すだけで新しい版が出る。ネットを切っても開ける（sw.js）
 """
@@ -197,6 +198,55 @@ with sync_playwright() as pw:
     check("声の欄の最大秒数がLINE用に短くなり、外すと戻る", cap_line != p8.inner_text("#capLong"), f"{cap_line} → {p8.inner_text('#capLong')}")
     check("選ぶのをやめると、元の長さの声に戻る", len(p8.evaluate("__koe.shareLink()")) == n0)
     ctx.close(); os.remove(wav)
+
+    # 合言葉つき
+    ctx = b.new_context(viewport={"width": 400, "height": 860})
+    ctx.add_init_script("""window.__shared = []; navigator.share = async d => { window.__shared.push(d); };""")
+    q = ctx.new_page(); q.on("pageerror", lambda e: errs.append(str(e)))
+    q.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    q.goto(URL); q.wait_for_function("window.__koe && __koe.ready()", timeout=15000)
+    rt = q.evaluate("""async ([pcm]) => { const k = __koe;
+      const pl = k.buildPayload(Int16Array.from(pcm), 5, null, k.CAP - k.LOCK_OVER, new TextEncoder().encode('ないしょ'));
+      const lk = await k.lockPayload(pl.bytes, 'はなの好きな花');
+      const c = k.parsePayload(lk); let bad = '';
+      try { await k.unlockPayload(c.locked, 'ちがう'); bad = 'opened'; } catch(e){ bad = e.message; }
+      const o = await k.unlockPayload(c.locked, ' はなの好きな花 ');
+      const big = k.buildPayload(new Int16Array(8000*30).map((_, i) => pcm[i % pcm.length]), 8, null, k.capLink(k.CANON) - k.LOCK_OVER);
+      const bl = await k.lockPayload(big.bytes, 'abc123xyz'), qr = k.makeQR(bl, k.CANON + '#');
+      return { hidden: !c.voice && !c.text && !!c.locked, bad, text: o.text, voice: o.voice ? o.voice.seconds : 0, over: lk.length - pl.bytes.length, LO: k.LOCK_OVER, ver: qr.version, sec: big.voiceSec }; }""", [pcm])
+    check("合言葉つきの中身は、声もひとことも見えない", rt["hidden"], str(rt))
+    check("ちがう合言葉では開かない", rt["bad"] == "badpw", rt["bad"])
+    check("正しい合言葉（前後の空白は無視）で開き、ひとことと声が戻る", rt["text"] == "ないしょ" and rt["voice"] > 2.9 and rt["over"] == rt["LO"], str(rt))
+    check("合言葉つきでも、いちばん長い声が型番40に収まる", rt["ver"] <= 40, f"型番{rt['ver']}・声{rt['sec']:.1f}秒")
+    # 画面で作って、リンクで送り、届いた側で合言葉を入れて聞く
+    q.click("[data-sample=kkk]"); q.wait_for_selector("#outCard:not([hidden])", timeout=15000)
+    q.fill("#msgText", "ないしょの話"); q.fill("#pwText", "ＡＢＣ１２３"); q.wait_for_timeout(1500)
+    cap = q.inner_text("#qrCap")
+    check("合言葉つきでは、QRの説明にひとことを出さない", "ないしょ" not in cap and "合言葉つき" in cap, cap)
+    q.click("#selfTestBtn"); q.wait_for_timeout(1500)
+    check("この場で読み取りテストで、合言葉で開いて確かめられる", "合言葉で開いて" in q.inner_text("#testMsg"), q.inner_text("#testMsg"))
+    q.click("#shareBtn"); q.wait_for_timeout(300)
+    sh = q.evaluate("window.__shared"); url = sh[0]["url"]
+    check("送る本文にもひとことを出さない", "ないしょ" not in sh[0]["text"] and "合言葉" in sh[0]["text"], sh[0]["text"])
+    q2 = ctx.new_page(); q2.on("pageerror", lambda e: errs.append(str(e)))
+    q2.route("**/fonts.googleapis.com/**", lambda r: r.abort())
+    q2.goto(URL + url[url.index("#"):])
+    q2.wait_for_selector("#linkLock:not([hidden])", timeout=15000)
+    check("届いたリンクでは合言葉の欄が出て、再生ボタンは隠れる", q2.is_hidden("#linkPlay") and q2.is_hidden("#linkFrom"))
+    q2.fill("#linkPw", "abc12"); q2.click("#linkOpen"); q2.wait_for_timeout(1500)
+    check("ちがう合言葉では「ちがいます」と出る", "ちがいます" in q2.inner_text("#linkPwMsg") and q2.is_hidden("#linkPlay"))
+    q2.fill("#linkPw", "abc123"); q2.click("#linkOpen"); q2.wait_for_selector("#linkPlay:not([hidden])", timeout=15000)
+    frm = q2.inner_text("#linkFrom"); q2.click("#linkPlay"); q2.wait_for_timeout(1200)
+    st = q2.evaluate("(() => { const a = __koe.audio(); return a ? { paused: a.paused, t: a.currentTime } : null })()")
+    check("全角の大文字で付けた合言葉を、半角の小文字で入れても開き、ひとことが出て聞ける", "ないしょの話" in frm and bool(st) and not st["paused"], f"{frm} {st}")
+    # 写真（読み取り画面）からも合言葉で開ける
+    img = os.path.join(ROOT, "_lock_test.png")
+    with open(img, "wb") as f: f.write(base64.b64decode(q.evaluate("document.getElementById('qrImg').src.split(',')[1]")))
+    q.click("#tabRead"); q.set_input_files("#photoFile", img)
+    q.wait_for_selector("#rdLock:not([hidden])", timeout=15000)
+    q.fill("#rdPw", "ABC123"); q.click("#rdOpen"); q.wait_for_selector("#playBtn:not([hidden])", timeout=15000)
+    check("写真から読んでも、合言葉で開ける", "ないしょの話" in q.inner_text("#rdFrom"))
+    os.remove(img); ctx.close()
 
     # iPhoneのホーム画面から開いたときの印刷（共有メニューにQRの画像を渡す）
     ctx = b.new_context(viewport={"width": 400, "height": 860},
