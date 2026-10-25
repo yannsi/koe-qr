@@ -17,14 +17,9 @@ jobs:
 
   deploy:
     needs: check
-    # ubuntu-latest は 2026年10月19日から Ubuntu 26 に切り替わり始め、その後 Firebase への公開が失敗するようになった。
-    # 公開の仕事は 24.04 に固定し、Firebase の道具（firebase-tools）が対応している Node 22 を明示して使う
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
