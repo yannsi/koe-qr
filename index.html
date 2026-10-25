@@ -131,7 +131,7 @@ footer a{color:var(--ai);}
 
 <div class="wrap">
   <header style="display:flex;flex-direction:column;gap:6px">
-    <h1>声のQR<small>試作版 0.7.2</small></h1>
+    <h1>声のQR<small>試作版 0.7.3</small></h1>
     <p class="lead">録音した声とメロディを、QRコードの中にそのまま入れます。読み取るときにネットはいりません。</p>
   </header>
 
@@ -191,8 +191,8 @@ footer a{color:var(--ai);}
     <div class="card">
       <p class="label"><b>メロディ</b>ドレミか工工四で書きます</p>
       <div class="samples">
-        <button class="btn small" type="button" data-sample="kkk" aria-pressed="false">きらきら星（工工四）</button>
-        <button class="btn small" type="button" data-sample="doremi" aria-pressed="false">きらきら星（ドレミ）</button>
+        <button class="btn small" type="button" data-sample="kkk" aria-pressed="false">歓喜の歌（工工四）</button>
+        <button class="btn small" type="button" data-sample="doremi" aria-pressed="false">家路（ドレミ）</button>
         <button class="btn small" type="button" data-sample="ryukyu" aria-pressed="false">琉球音階のフレーズ</button>
         <button class="btn small" type="button" id="melClear">消す</button>
       </div>
@@ -13109,8 +13109,10 @@ const fmtSec = s => s ? s.toFixed(1) : "0";
 
 /* =============== 画面：作る =============== */
 const SAMPLES = {
-  kkk:    { text:"工 工 八 八 九 九 八ー\n七 七 六 六 五 五 工ー\n八 八 七 七 六 六 五ー\n八 八 七 七 六 六 五ー\n工 工 八 八 九 九 八ー\n七 七 六 六 五 五 工ー", inst:2, tempo:108 },
-  doremi: { text:"ド ド ソ ソ ラ ラ ソー\nファ ファ ミ ミ レ レ ドー\nソ ソ ファ ファ ミ ミ レー\nソ ソ ファ ファ ミ ミ レー\nド ド ソ ソ ラ ラ ソー\nファ ファ ミ ミ レ レ ドー", inst:0, tempo:108 },
+  /* 歓喜の歌（ベートーヴェン「交響曲第9番」）。工工四：工＝ド 五＝レ 六＝ミ 七＝ファ 八＝ソ 上＝下のソ */
+  kkk:    { text:"六 六 七 八 八 七 六 五\n工 工 五 六 六ー 五ー\n六 六 七 八 八 七 六 五\n工 工 五 六 五ー 工ー\n五 五 六 工 五 六_ 七_ 六 工\n五 六_ 七_ 六 五 工 五 上ー\n六 六 七 八 八 七 六 五\n工 工 五 六 五ー 工ー", inst:2, tempo:120 },
+  /* 家路（ドヴォルザーク「交響曲第9番 新世界より」第2楽章）。「_ー」で1拍半 */
+  doremi: { text:"ミ_ー ソ_ ソー ミ_ー レ_ ドー\nレ ミ ソ ミ レーーー\nミ_ー ソ_ ソー ミ_ー レ_ ドー\nレ ミ レ ド ドーーー", inst:0, tempo:66 },
   ryukyu: { text:"ド ミ ファ ソー シ ↑ドー\nシ ソ ファ ミー ファ_ ソ_ ミ ドー ・\nミ ソ シ ↑ドー ↑ミ_ ↑レ_ ↑ドー\nシ ソ ファ ミ ドーー", inst:2, tempo:96 }
 };
 let lastPCM = null, lastPayload = null, lastQR = null, maxSec = 15, melState = { notes:[], data:null };
@@ -13457,7 +13459,7 @@ $("linkPlay").addEventListener("click", () => { if (linkRead) playContent(linkRe
 window.addEventListener("hashchange", openFromLink);
 
 /* =============== 起動 =============== */
-/* メロディは最初は空（試作版0.6.2）。見本を入れておくと、声だけのつもりでもきらきら星が一緒に入ってしまうため */
+/* メロディは最初は空（試作版0.6.2）。見本を入れておくと、声だけのつもりでも見本の曲が一緒に入ってしまうため */
 $("tempoOut").textContent = "♩＝" + $("tempo").value; markSample();
 if (!canLock()){ $("pwText").disabled = true; $("pwHint").textContent = "この画面では合言葉を付けられません。https:// で始まるアドレスで開いてください。"; }
 initCodec().then(() => { rebuild(); openFromLink(); }).catch(() => {
