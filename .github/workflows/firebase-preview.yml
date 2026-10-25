@@ -17,9 +17,14 @@ jobs:
 
   preview:
     needs: check
-    runs-on: ubuntu-latest
+    # ubuntu-latest は 2026年10月19日から Ubuntu 26 に切り替わり始め、その後 Firebase への公開が失敗するようになった。
+    # 公開の仕事は 24.04 に固定し、Firebase の道具（firebase-tools）が対応している Node 22 を明示して使う
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - id: ch
         name: ブランチ名から確認用チャンネル名を作る
         run: echo "name=$(echo '${{ github.ref_name }}' | tr -c 'a-zA-Z0-9-' '-' | cut -c1-30 | sed 's/-*$//')" >> "$GITHUB_OUTPUT"
