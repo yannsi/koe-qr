@@ -1,5 +1,5 @@
 /* 声のQR：一度開けば、以後はネットなしで動くようにファイルを端末に保存する（tools/build.py が生成） */
-const CACHE = "koe-qr-v0.7.1";
+const CACHE = "koe-qr-v0.7.2";
 const FILES = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-512-maskable.png", "./icon-180.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
 /* 古い版の保存を片付ける。予備の GitHub Pages（yannsi.github.io/koe-qr/）では他の作品と保存場所を共有しているので、

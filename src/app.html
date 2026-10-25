@@ -115,7 +115,7 @@ footer a{color:var(--ai);}
 
 <div class="wrap">
   <header style="display:flex;flex-direction:column;gap:6px">
-    <h1>声のQR<small>試作版 0.7.1</small></h1>
+    <h1>声のQR<small>試作版 0.7.2</small></h1>
     <p class="lead">録音した声とメロディを、QRコードの中にそのまま入れます。読み取るときにネットはいりません。</p>
   </header>
 
@@ -205,14 +205,14 @@ footer a{color:var(--ai);}
     <!-- ひとこと -->
     <div class="card">
       <p class="label"><b>ひとこと</b>入れなくてもかまいません</p>
-      <input class="textin" id="msgText" type="text" maxlength="30" autocomplete="off" placeholder="例：はなより　お誕生日おめでとう" aria-label="ひとこと（30文字まで）">
+      <input class="textin" id="msgText" type="text" maxlength="30" autocomplete="off" placeholder="例：〇〇より　いつもありがとうございます" aria-label="ひとこと（30文字まで）">
       <p class="hint">受け取った人の画面に、声やメロディと一緒に大きく出ます。30文字まで。1文字ふえるごとに、声は約0.02〜0.03秒短くなります。</p>
     </div>
 
     <!-- 合言葉 -->
     <div class="card">
       <p class="label"><b>合言葉</b>付けなくてもかまいません</p>
-      <input class="textin" id="pwText" type="text" maxlength="20" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="例：はなの好きな花" aria-label="合言葉（20文字まで）">
+      <input class="textin" id="pwText" type="text" maxlength="20" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="例：二人だけが知っている言葉" aria-label="合言葉（20文字まで）">
       <p class="hint" id="pwHint">合言葉を付けると、知っている人だけが聞けます。声・メロディ・ひとことが隠れます。合言葉はQRやリンクとは別に、口で伝えるなどしてください。声は約0.3〜0.5秒短くなります。</p>
       <p class="msg info" id="pwWeak" hidden></p>
     </div>
